@@ -26,13 +26,6 @@ export default auth((req: NextRequest & { auth: { user?: { role?: string } } | n
     }
   }
 
-  // Manutentore: solo le proprie pratiche, niente anagrafica clienti né statistiche
-  if (req.auth.user?.role === "MANUTENTORE") {
-    if (pathname.startsWith("/clienti") || pathname.startsWith("/statistiche")) {
-      return NextResponse.redirect(new URL("/pratiche", req.url));
-    }
-  }
-
   return NextResponse.next();
 });
 

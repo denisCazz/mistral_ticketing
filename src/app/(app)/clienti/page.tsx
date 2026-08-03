@@ -13,7 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Search, Phone, MapPin, Pencil } from "lucide-react";
+import { Search, Phone, MapPin, Pencil, Plus } from "lucide-react";
 
 interface Cliente {
   id: string;
@@ -79,7 +79,7 @@ function ClientiContent() {
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [searchInput, setSearchInput] = useState(searchParams.get("search") ?? "");
-  const [editOpen, setEditOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Cliente | null>(null);
   const [form, setForm] = useState<ClienteForm>(EMPTY);
   const [saving, setSaving] = useState(false);
@@ -108,38 +108,54 @@ function ClientiContent() {
     router.push(`/clienti?${p}`);
   }
 
+  function openCreate() {
+    setEditing(null);
+    setForm(EMPTY);
+    setDialogOpen(true);
+  }
+
   function openEdit(c: Cliente, e: React.MouseEvent) {
     e.stopPropagation();
     setEditing(c);
     setForm(clienteToForm(c));
-    setEditOpen(true);
+    setDialogOpen(true);
   }
 
   async function saveCliente(e: React.FormEvent) {
     e.preventDefault();
-    if (!editing) return;
     setSaving(true);
-    const res = await fetch(`/api/clienti/${editing.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
+    const res = editing
+      ? await fetch(`/api/clienti/${editing.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(form),
+        })
+      : await fetch("/api/clienti", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(form),
+        });
     setSaving(false);
     if (!res.ok) {
-      toast.error("Errore aggiornamento cliente");
+      toast.error(editing ? "Errore aggiornamento cliente" : "Errore creazione cliente");
       return;
     }
-    toast.success("Cliente aggiornato");
-    setEditOpen(false);
+    toast.success(editing ? "Cliente aggiornato" : "Cliente creato");
+    setDialogOpen(false);
     setEditing(null);
     fetchClienti();
   }
 
   return (
     <div className="p-6 space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Clienti</h1>
-        <p className="text-sm text-gray-500 mt-1">{total} clienti in anagrafica</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Clienti</h1>
+          <p className="text-sm text-gray-500 mt-1">{total} clienti in anagrafica</p>
+        </div>
+        <Button className="bg-orange-500 hover:bg-orange-600" onClick={openCreate}>
+          <Plus className="h-4 w-4 mr-2" /> Nuovo cliente
+        </Button>
       </div>
 
       <div className="flex gap-3">
@@ -240,10 +256,10 @@ function ClientiContent() {
         </div>
       )}
 
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Modifica cliente</DialogTitle>
+            <DialogTitle>{editing ? "Modifica cliente" : "Nuovo cliente"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={saveCliente} className="space-y-3 mt-2">
             <div className="space-y-1">
@@ -283,9 +299,9 @@ function ClientiContent() {
               <Input value={form.provincia} onChange={(e) => setForm((f) => ({ ...f, provincia: e.target.value }))} />
             </div>
             <div className="flex gap-3 justify-end pt-2">
-              <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>Annulla</Button>
+              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Annulla</Button>
               <Button type="submit" className="bg-orange-500 hover:bg-orange-600" disabled={saving}>
-                {saving ? "Salvataggio..." : "Salva modifiche"}
+                {saving ? "Salvataggio..." : editing ? "Salva modifiche" : "Crea cliente"}
               </Button>
             </div>
           </form>

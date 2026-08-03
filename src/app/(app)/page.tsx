@@ -18,7 +18,6 @@ interface DashboardData {
     createdAt: string;
     cliente: { id: string; ragioneSociale: string };
     operatore: { id: string; name: string };
-    cat: { id: string; ragioneSociale: string } | null;
   }[];
   totaleClienti: number;
   totaleRapportini: number;
@@ -26,7 +25,7 @@ interface DashboardData {
 
 export default function DashboardPage() {
   const { data: session } = useSession();
-  const isManutentore = session?.user?.role === "MANUTENTORE";
+  const isAdmin = session?.user?.role === "ADMIN";
   const [data, setData] = useState<DashboardData | null>(null);
 
   useEffect(() => {
@@ -57,7 +56,7 @@ export default function DashboardPage() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {!isManutentore && (
+        {isAdmin && (
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">

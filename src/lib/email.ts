@@ -63,22 +63,8 @@ interface PraticaEmailBase {
   descrizione?: string | null;
 }
 
-interface CatEmailData extends PraticaEmailBase {
-  catNome: string;
-  stato: string;
-  note?: string | null;
-}
-
 interface StatoCambiatoEmailData extends PraticaEmailBase {
   destinatarioNome: string;
-  statoDa: string;
-  statoA: string;
-  changedByName: string;
-  note?: string | null;
-}
-
-interface CatStatoCambiatoEmailData extends PraticaEmailBase {
-  catNome: string;
   statoDa: string;
   statoA: string;
   changedByName: string;
@@ -91,12 +77,14 @@ interface AssegnazioneEmailData extends PraticaEmailBase {
   note?: string | null;
 }
 
-interface ManutentoreAssegnatoEmailData extends AssegnazioneEmailData {
-  manutentoreNome: string;
+interface OperatoreAssegnatoEmailData extends AssegnazioneEmailData {
+  operatoreNome: string;
 }
 
-interface CatAssegnatoEmailData extends AssegnazioneEmailData {
-  catNome: string;
+interface SollecitoEmailData extends PraticaEmailBase {
+  destinatarioNome: string;
+  stato: string;
+  note?: string | null;
 }
 
 function baseTemplate(titolo: string, corpo: string): string {
@@ -113,7 +101,7 @@ function baseTemplate(titolo: string, corpo: string): string {
   </div>`;
 }
 
-// Email cambio stato a operatore / manutentore.
+// Email cambio stato all'operatore.
 export function praticaStatoCambiatoEmail(d: StatoCambiatoEmailData): { subject: string; html: string } {
   const corpo = `
     <p>Ciao <strong>${d.destinatarioNome}</strong>,</p>
@@ -133,49 +121,10 @@ export function praticaStatoCambiatoEmail(d: StatoCambiatoEmailData): { subject:
   };
 }
 
-// Email cambio stato al CAT.
-export function catStatoCambiatoEmail(d: CatStatoCambiatoEmailData): { subject: string; html: string } {
+// Email assegnazione pratica all'operatore.
+export function operatoreAssegnatoEmail(d: OperatoreAssegnatoEmailData): { subject: string; html: string } {
   const corpo = `
-    <p>Ciao <strong>${d.catNome}</strong>,</p>
-    <p>La pratica <strong>${d.numeroPratica}</strong> assegnata al vostro centro ha cambiato stato.</p>
-    <ul>
-      <li><strong>Cliente:</strong> ${d.cliente}</li>
-      <li><strong>Da:</strong> ${d.statoDa}</li>
-      <li><strong>A:</strong> ${d.statoA}</li>
-      <li><strong>Aggiornato da:</strong> ${d.changedByName}</li>
-      ${d.descrizione ? `<li><strong>Descrizione:</strong> ${d.descrizione}</li>` : ""}
-      ${d.note ? `<li><strong>Note:</strong> ${d.note}</li>` : ""}
-    </ul>
-    ${praticaButton(d.praticaId)}`;
-  return {
-    subject: `[${d.numeroPratica}] Stato aggiornato: ${d.statoA} — ${d.cliente}`,
-    html: baseTemplate("Stato pratica aggiornato", corpo),
-  };
-}
-
-// Email assegnazione pratica al manutentore.
-export function manutentoreAssegnatoEmail(d: ManutentoreAssegnatoEmailData): { subject: string; html: string } {
-  const corpo = `
-    <p>Ciao <strong>${d.manutentoreNome}</strong>,</p>
-    <p>Ti è stata assegnata la pratica <strong>${d.numeroPratica}</strong>.</p>
-    <ul>
-      <li><strong>Cliente:</strong> ${d.cliente}</li>
-      <li><strong>Stato:</strong> ${d.stato}</li>
-      <li><strong>Assegnata da:</strong> ${d.assegnatoDa}</li>
-      ${d.descrizione ? `<li><strong>Descrizione:</strong> ${d.descrizione}</li>` : ""}
-      ${d.note ? `<li><strong>Note:</strong> ${d.note}</li>` : ""}
-    </ul>
-    ${praticaButton(d.praticaId)}`;
-  return {
-    subject: `[${d.numeroPratica}] Pratica assegnata — ${d.cliente}`,
-    html: baseTemplate("Nuova pratica assegnata", corpo),
-  };
-}
-
-// Email assegnazione pratica al CAT.
-export function catAssegnatoEmail(d: CatAssegnatoEmailData): { subject: string; html: string } {
-  const corpo = `
-    <p>Ciao <strong>${d.catNome}</strong>,</p>
+    <p>Ciao <strong>${d.operatoreNome}</strong>,</p>
     <p>Ti è stata assegnata la pratica <strong>${d.numeroPratica}</strong>.</p>
     <ul>
       <li><strong>Cliente:</strong> ${d.cliente}</li>
@@ -192,15 +141,10 @@ export function catAssegnatoEmail(d: CatAssegnatoEmailData): { subject: string; 
   };
 }
 
-// Retrocompatibilità: sollecito e vecchi riferimenti.
-export function catPresaInCaricoEmail(d: CatEmailData): { subject: string; html: string } {
-  return catAssegnatoEmail({ ...d, assegnatoDa: "Mistral Impianti" });
-}
-
-// Email sollecito al CAT.
-export function catSollecitoEmail(d: CatEmailData): { subject: string; html: string } {
+// Email sollecito all'operatore.
+export function sollecitoEmail(d: SollecitoEmailData): { subject: string; html: string } {
   const corpo = `
-    <p>Ciao <strong>${d.catNome}</strong>,</p>
+    <p>Ciao <strong>${d.destinatarioNome}</strong>,</p>
     <p>Sollecito sulla pratica <strong>${d.numeroPratica}</strong> ancora aperta.</p>
     <ul>
       <li><strong>Cliente:</strong> ${d.cliente}</li>

@@ -1,9 +1,7 @@
 import { StatoPratica } from "@prisma/client";
 import { STATO_LABELS } from "@/lib/constants";
 import {
-  catAssegnatoEmail,
-  catStatoCambiatoEmail,
-  manutentoreAssegnatoEmail,
+  operatoreAssegnatoEmail,
   praticaStatoCambiatoEmail,
   sendEmail,
 } from "@/lib/email";
@@ -11,8 +9,6 @@ import {
 export const praticaIncludeForNotify = {
   cliente: { select: { ragioneSociale: true } },
   operatore: { select: { id: true, name: true, email: true } },
-  manutentore: { select: { id: true, name: true, email: true } },
-  cat: { select: { id: true, ragioneSociale: true, emails: true } },
 } as const;
 
 export type PraticaForNotify = {
@@ -20,12 +16,9 @@ export type PraticaForNotify = {
   numeroPratica: string;
   descrizione?: string | null;
   stato: StatoPratica;
-  catId?: string | null;
-  manutentoreId?: string | null;
+  operatoreId: string;
   cliente: { ragioneSociale: string };
   operatore: { id: string; name: string; email: string };
-  manutentore?: { id: string; name: string; email: string } | null;
-  cat?: { id: string; ragioneSociale: string; emails: string[] } | null;
 };
 
 interface NotifyPraticaChangesInput {
@@ -65,13 +58,11 @@ function collectStatusRecipients(
   };
 
   add(after.operatore.email, after.operatore.name);
-  add(after.manutentore?.email, after.manutentore?.name ?? "Manutentore");
 
   return recipients;
 }
 
 function notifyStatoCambiato({
-  before,
   after,
   statoDa,
   statoA,
@@ -96,18 +87,6 @@ function notifyStatoCambiato({
     });
     sendFireAndForget(email, subject, html);
   }
-
-  if (after.cat?.emails?.length) {
-    const { subject, html } = catStatoCambiatoEmail({
-      ...base,
-      catNome: after.cat.ragioneSociale,
-      statoDa: statoDaLabel,
-      statoA: statoALabel,
-      changedByName,
-      note,
-    });
-    sendFireAndForget(after.cat.emails, subject, html);
-  }
 }
 
 function notifyAssegnazioni({
@@ -118,30 +97,18 @@ function notifyAssegnazioni({
 }: NotifyPraticaChangesInput) {
   const base = emailBase(after);
 
-  if (after.catId && after.catId !== before.catId && after.cat?.emails?.length) {
-    const { subject, html } = catAssegnatoEmail({
-      ...base,
-      catNome: after.cat.ragioneSociale,
-      stato: STATO_LABELS[after.stato],
-      assegnatoDa: changedByName,
-      note,
-    });
-    sendFireAndForget(after.cat.emails, subject, html);
-  }
-
   if (
-    after.manutentoreId &&
-    after.manutentoreId !== before.manutentoreId &&
-    after.manutentore?.email
+    after.operatoreId !== before.operatoreId &&
+    after.operatore?.email
   ) {
-    const { subject, html } = manutentoreAssegnatoEmail({
+    const { subject, html } = operatoreAssegnatoEmail({
       ...base,
-      manutentoreNome: after.manutentore.name,
+      operatoreNome: after.operatore.name,
       stato: STATO_LABELS[after.stato],
       assegnatoDa: changedByName,
       note,
     });
-    sendFireAndForget(after.manutentore.email, subject, html);
+    sendFireAndForget(after.operatore.email, subject, html);
   }
 }
 

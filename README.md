@@ -3,18 +3,18 @@
 Gestionale unificato per **Mistral Impianti**: pratiche di assistenza (ticketing) + rapportini di intervento sul campo.
 
 Nato dall’unione di:
-- **ticketing_Eva** — workflow pratiche / CAT / clienti / import XLSX
+- **ticketing_Eva** — workflow pratiche / operatori / clienti / import XLSX
 - **rapportini** (Bitora) — schede intervento, firme, PDF, catalogo marche
 
 ## Funzionalità
 
 | Area | Descrizione |
 |------|-------------|
-| Pratiche | Ciclo di vita assistenza (`MIS-YYYY-####`), stati, CAT, storico |
+| Pratiche | Ciclo di vita assistenza (`MIS-YYYY-####`), stati, assegnazione operatori, storico |
 | Rapportini | Creazione schede intervento, firme, export PDF |
 | Clienti | Anagrafica condivisa tra pratiche e rapportini |
-| CAT / Utenti | Reti assistenza e ruoli `ADMIN` / `OPERATORE` / `MANUTENTORE` |
-| Import | Import clienti/CAT da XLSX |
+| Utenti | Ruoli `ADMIN` / `OPERATORE` |
+| Import | Import clienti da XLSX |
 
 ## Stack
 
@@ -49,9 +49,8 @@ docker compose up --build
 
 ## Ruoli
 
-- **ADMIN** — tutto (pratiche, rapportini, CAT, utenti, import)
-- **OPERATORE** — pratiche, rapportini, clienti, statistiche
-- **MANUTENTORE** — pratiche assegnate + rapportini propri
+- **ADMIN** — tutto (pratiche, rapportini, utenti, import); vede tutte le pratiche
+- **OPERATORE** — vede solo le pratiche assegnate a lui; rapportini, clienti, statistiche
 
 ## Struttura
 

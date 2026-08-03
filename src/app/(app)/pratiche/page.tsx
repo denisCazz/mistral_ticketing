@@ -6,7 +6,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { StatoBadge } from "@/components/stato-badge";
 import { STATO_LABELS, STATI_ORDINE, statiTargetDisponibili } from "@/lib/constants";
-import { canManageStati } from "@/lib/access";
+import { canAssignOperatore, canManageStati } from "@/lib/access";
 import { StatoPratica } from "@prisma/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -25,7 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Search, Building2, Tag } from "lucide-react";
+import { Plus, Search, UserCog, Tag } from "lucide-react";
 import { useSession } from "next-auth/react";
 
 interface Pratica {
@@ -36,13 +36,11 @@ interface Pratica {
   createdAt: string;
   cliente: { id: string; ragioneSociale: string };
   operatore: { id: string; name: string };
-  manutentore: { id: string; name: string } | null;
-  cat: { id: string; ragioneSociale: string } | null;
 }
 
-interface Cat {
+interface Operatore {
   id: string;
-  ragioneSociale: string;
+  name: string;
 }
 
 export default function PratichePage() {
@@ -61,11 +59,11 @@ function PraticheContent() {
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [catList, setCatList] = useState<Cat[]>([]);
+  const [operatoriList, setOperatoriList] = useState<Operatore[]>([]);
 
-  const [catDialog, setCatDialog] = useState<{ open: boolean; pratica: Pratica | null }>({ open: false, pratica: null });
+  const [opDialog, setOpDialog] = useState<{ open: boolean; pratica: Pratica | null }>({ open: false, pratica: null });
   const [statoDialog, setStatoDialog] = useState<{ open: boolean; pratica: Pratica | null }>({ open: false, pratica: null });
-  const [selectedCatId, setSelectedCatId] = useState("");
+  const [selectedOperatoreId, setSelectedOperatoreId] = useState("");
   const [newStato, setNewStato] = useState<StatoPratica | "">("");
   const [statoNote, setStatoNote] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
@@ -74,7 +72,8 @@ function PraticheContent() {
   const search = searchParams.get("search") ?? "";
   const page = parseInt(searchParams.get("page") ?? "1");
   const canManage = canManageStati(session);
-  const canManageCat = canManage && !session?.user?.catId;
+  const canAssign = canAssignOperatore(session);
+  const canCreate = session?.user?.role === "ADMIN" || session?.user?.role === "OPERATORE";
 
   const fetchPratiche = useCallback(async () => {
     setLoading(true);
@@ -95,45 +94,39 @@ function PraticheContent() {
   }, [fetchPratiche]);
 
   useEffect(() => {
-    if (!canManage) return;
-    fetch("/api/cat?list=1")
+    if (!canAssign) return;
+    fetch("/api/utenti?assegnabili=1")
       .then((r) => (r.ok ? r.json() : []))
-      .then((data: { id: string; ragioneSociale: string }[]) =>
-        setCatList(Array.isArray(data) ? data : [])
+      .then((data: Operatore[]) =>
+        setOperatoriList(Array.isArray(data) ? data : [])
       );
-  }, [canManage]);
+  }, [canAssign]);
 
   function setParam(key: string, value: string | null) {
     const p = new URLSearchParams(searchParams.toString());
     if (value) p.set(key, value); else p.delete(key);
-    // Cambiando un filtro si torna alla prima pagina; la paginazione invece
-    // deve poter aggiornare direttamente il parametro "page".
     if (key !== "page") p.delete("page");
     router.push(`/pratiche?${p}`);
   }
 
-  // Include il CAT eventualmente assegnato ma non più attivo, così il select
-  // mostra sempre la ragione sociale invece del suo id.
-  const catOptions = useMemo(() => {
-    const map = new Map(catList.map((c) => [c.id, c]));
-    const assegnato = catDialog.pratica?.cat;
+  const operatoriOptions = useMemo(() => {
+    const map = new Map(operatoriList.map((o) => [o.id, o]));
+    const assegnato = opDialog.pratica?.operatore;
     if (assegnato && !map.has(assegnato.id)) {
-      map.set(assegnato.id, { id: assegnato.id, ragioneSociale: assegnato.ragioneSociale });
+      map.set(assegnato.id, { id: assegnato.id, name: assegnato.name });
     }
-    return [...map.values()].sort((a, b) =>
-      a.ragioneSociale.localeCompare(b.ragioneSociale, "it")
-    );
-  }, [catList, catDialog.pratica]);
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "it"));
+  }, [operatoriList, opDialog.pratica]);
 
-  const selectedCatLabel =
-    selectedCatId === "none" || !selectedCatId
+  const selectedOperatoreLabel =
+    !selectedOperatoreId
       ? undefined
-      : catOptions.find((c) => c.id === selectedCatId)?.ragioneSociale;
+      : operatoriOptions.find((o) => o.id === selectedOperatoreId)?.name;
 
-  function openCatDialog(pratica: Pratica, e: React.MouseEvent) {
+  function openOpDialog(pratica: Pratica, e: React.MouseEvent) {
     e.stopPropagation();
-    setSelectedCatId(pratica.cat?.id ?? "none");
-    setCatDialog({ open: true, pratica });
+    setSelectedOperatoreId(pratica.operatore.id);
+    setOpDialog({ open: true, pratica });
   }
 
   function openStatoDialog(pratica: Pratica, e: React.MouseEvent) {
@@ -143,22 +136,21 @@ function PraticheContent() {
     setStatoDialog({ open: true, pratica });
   }
 
-  async function assegnaCat() {
-    if (!catDialog.pratica) return;
+  async function assegnaOperatore() {
+    if (!opDialog.pratica || !selectedOperatoreId) return;
     setActionLoading(true);
-    const catId = selectedCatId === "none" ? null : selectedCatId;
-    const res = await fetch(`/api/pratiche/${catDialog.pratica.id}`, {
+    const res = await fetch(`/api/pratiche/${opDialog.pratica.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ catId }),
+      body: JSON.stringify({ operatoreId: selectedOperatoreId }),
     });
     setActionLoading(false);
     if (!res.ok) {
-      toast.error("Errore assegnazione CAT");
+      toast.error("Errore assegnazione operatore");
       return;
     }
-    toast.success(catId ? "CAT assegnato" : "CAT rimosso");
-    setCatDialog({ open: false, pratica: null });
+    toast.success("Operatore assegnato");
+    setOpDialog({ open: false, pratica: null });
     fetchPratiche();
   }
 
@@ -188,7 +180,7 @@ function PraticheContent() {
           <h1 className="text-2xl font-bold text-gray-900">Pratiche</h1>
           <p className="text-sm text-gray-500 mt-1">{total} pratiche trovate</p>
         </div>
-        {canManageCat && (
+        {canCreate && (
           <Link href="/pratiche/nuova">
             <Button className="w-full sm:w-auto bg-orange-500 hover:bg-orange-600">
               <Plus className="h-4 w-4 mr-2" /> Nuova pratica
@@ -230,14 +222,13 @@ function PraticheContent() {
         ) : pratiche.length === 0 ? (
           <div className="py-16 text-center text-gray-500 text-sm">Nessuna pratica trovata</div>
         ) : (
-          <table className="w-full min-w-[820px] text-sm">
+          <table className="w-full min-w-[720px] text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">N° Pratica</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Cliente</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Stato</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Operatore</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">CAT</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Data</th>
                 {canManage && (
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Azioni</th>
@@ -251,15 +242,14 @@ function PraticheContent() {
                   <td className="px-4 py-3 text-gray-900">{p.cliente.ragioneSociale}</td>
                   <td className="px-4 py-3"><StatoBadge stato={p.stato} /></td>
                   <td className="px-4 py-3 text-gray-600">{p.operatore.name}</td>
-                  <td className="px-4 py-3 text-gray-600">{p.cat?.ragioneSociale ?? "—"}</td>
                   <td className="px-4 py-3 text-gray-500">{new Date(p.createdAt).toLocaleDateString("it-IT")}</td>
                   {canManage && (
                     <td className="px-4 py-3">
                       <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                        {canManageCat && (
-                          <Button variant="outline" size="sm" onClick={(e) => openCatDialog(p, e)}>
-                            <Building2 className="h-3.5 w-3.5 mr-1" />
-                            Assegna CAT
+                        {canAssign && (
+                          <Button variant="outline" size="sm" onClick={(e) => openOpDialog(p, e)}>
+                            <UserCog className="h-3.5 w-3.5 mr-1" />
+                            Assegna
                           </Button>
                         )}
                         <Button variant="outline" size="sm" onClick={(e) => openStatoDialog(p, e)}>
@@ -298,35 +288,38 @@ function PraticheContent() {
         </div>
       )}
 
-      <Dialog open={catDialog.open} onOpenChange={(open) => setCatDialog((d) => ({ ...d, open }))}>
+      <Dialog open={opDialog.open} onOpenChange={(open) => setOpDialog((d) => ({ ...d, open }))}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Assegna CAT</DialogTitle>
+            <DialogTitle>Assegna operatore</DialogTitle>
           </DialogHeader>
-          {catDialog.pratica && (
+          {opDialog.pratica && (
             <div className="space-y-4">
               <p className="text-sm text-gray-500">
-                Pratica <span className="font-mono font-medium text-gray-900">{catDialog.pratica.numeroPratica}</span>
+                Pratica <span className="font-mono font-medium text-gray-900">{opDialog.pratica.numeroPratica}</span>
               </p>
               <div className="space-y-1">
-                <Label>Centro Assistenza</Label>
-                <Select value={selectedCatId} onValueChange={(v) => setSelectedCatId(v ?? "none")}>
+                <Label>Operatore</Label>
+                <Select value={selectedOperatoreId} onValueChange={(v) => setSelectedOperatoreId(v ?? "")}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Seleziona CAT...">
-                      {selectedCatLabel}
+                    <SelectValue placeholder="Seleziona operatore...">
+                      {selectedOperatoreLabel}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Nessun CAT</SelectItem>
-                    {catOptions.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.ragioneSociale}</SelectItem>
+                    {operatoriOptions.map((o) => (
+                      <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setCatDialog({ open: false, pratica: null })}>Annulla</Button>
-                <Button className="bg-orange-500 hover:bg-orange-600" onClick={assegnaCat} disabled={actionLoading}>
+                <Button variant="outline" onClick={() => setOpDialog({ open: false, pratica: null })}>Annulla</Button>
+                <Button
+                  className="bg-orange-500 hover:bg-orange-600"
+                  onClick={assegnaOperatore}
+                  disabled={actionLoading || !selectedOperatoreId}
+                >
                   {actionLoading ? "Salvataggio..." : "Conferma"}
                 </Button>
               </div>
@@ -354,14 +347,12 @@ function PraticheContent() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none" disabled>Seleziona stato...</SelectItem>
-                    {statoDialog.pratica &&
-                      statiTargetDisponibili(
-                        session?.user?.role,
-                        session?.user?.catId,
-                        statoDialog.pratica.stato
-                      ).map((s) => (
-                        <SelectItem key={s} value={s}>{STATO_LABELS[s]}</SelectItem>
-                      ))}
+                    {statiTargetDisponibili(
+                      session?.user?.role,
+                      statoDialog.pratica.stato
+                    ).map((s) => (
+                      <SelectItem key={s} value={s}>{STATO_LABELS[s]}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

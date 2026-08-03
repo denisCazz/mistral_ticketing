@@ -12,7 +12,6 @@ import {
   UserCog,
   Upload,
   LogOut,
-  Building2,
   BarChart3,
   Menu,
   ClipboardList,
@@ -27,12 +26,11 @@ import {
 } from "@/components/ui/sheet";
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard, roles: ["ADMIN", "OPERATORE", "MANUTENTORE"] },
-  { href: "/pratiche", label: "Pratiche", icon: FileText, roles: ["ADMIN", "OPERATORE", "MANUTENTORE"] },
-  { href: "/rapportini", label: "Rapportini", icon: ClipboardList, roles: ["ADMIN", "OPERATORE", "MANUTENTORE"] },
+  { href: "/", label: "Dashboard", icon: LayoutDashboard, roles: ["ADMIN", "OPERATORE"] },
+  { href: "/pratiche", label: "Pratiche", icon: FileText, roles: ["ADMIN", "OPERATORE"] },
+  { href: "/rapportini", label: "Rapportini", icon: ClipboardList, roles: ["ADMIN", "OPERATORE"] },
   { href: "/statistiche", label: "Statistiche", icon: BarChart3, roles: ["ADMIN", "OPERATORE"] },
   { href: "/clienti", label: "Clienti", icon: Users, roles: ["ADMIN", "OPERATORE"] },
-  { href: "/admin/cat", label: "CAT", icon: Building2, roles: ["ADMIN"] },
   { href: "/admin/utenti", label: "Utenti", icon: UserCog, roles: ["ADMIN"] },
   { href: "/import", label: "Importa XLSX", icon: Upload, roles: ["ADMIN"] },
 ];

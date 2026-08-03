@@ -7,9 +7,8 @@ import { z } from "zod";
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
   password: z.string().min(6).optional(),
-  role: z.enum(["ADMIN", "OPERATORE", "MANUTENTORE"]).optional(),
+  role: z.enum(["ADMIN", "OPERATORE"]).optional(),
   active: z.boolean().optional(),
-  catId: z.string().min(1).optional().nullable(),
 });
 
 export async function PATCH(
@@ -28,12 +27,11 @@ export async function PATCH(
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { name, password, role, active, catId } = parsed.data;
+  const { name, password, role, active } = parsed.data;
   const updateData: Record<string, unknown> = {};
   if (name !== undefined) updateData.name = name;
   if (role !== undefined) updateData.role = role;
   if (active !== undefined) updateData.active = active;
-  if (catId !== undefined) updateData.catId = catId || null;
   if (password) updateData.passwordHash = await bcrypt.hash(password, 12);
 
   const user = await prisma.user.update({
@@ -46,8 +44,6 @@ export async function PATCH(
       role: true,
       active: true,
       createdAt: true,
-      catId: true,
-      cat: { select: { id: true, ragioneSociale: true } },
     },
   });
 
@@ -72,9 +68,6 @@ export async function DELETE(
     );
   }
 
-  // Un utente non può essere eliminato se è operatore di pratiche o ha
-  // registrato cambi di stato (riferimenti obbligatori): in tal caso viene
-  // disattivato per preservare lo storico.
   const [comeOperatore, comeStoria] = await Promise.all([
     prisma.pratica.count({ where: { operatoreId: id } }),
     prisma.praticaStoria.count({ where: { changedById: id } }),
@@ -88,14 +81,7 @@ export async function DELETE(
     return NextResponse.json({ user, softDeleted: true });
   }
 
-  // Rimuove i riferimenti opzionali (manutentore) e poi elimina l'utente.
-  await prisma.$transaction([
-    prisma.pratica.updateMany({
-      where: { manutentoreId: id },
-      data: { manutentoreId: null },
-    }),
-    prisma.user.delete({ where: { id } }),
-  ]);
+  await prisma.user.delete({ where: { id } });
 
   return NextResponse.json({ ok: true });
 }

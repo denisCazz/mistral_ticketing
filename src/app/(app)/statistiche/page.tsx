@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatoBadge } from "@/components/stato-badge";
 import { STATO_LABELS } from "@/lib/constants";
 import { StatoPratica } from "@prisma/client";
-import { FileText, FolderOpen, CheckCircle2, Users, Building2, Timer } from "lucide-react";
+import { FileText, FolderOpen, CheckCircle2, Users, UserCog, Timer } from "lucide-react";
 
 interface Conteggio {
   id?: string | null;
@@ -20,13 +20,11 @@ interface StatsData {
     aperte: number;
     chiuse: number;
     clienti: number;
-    cat: number;
+    operatori: number;
     tempoMedioGiorni: number | null;
   };
   perStato: { stato: StatoPratica; count: number }[];
-  perCat: Conteggio[];
   perOperatore: Conteggio[];
-  perManutentore: Conteggio[];
   perMese: { key: string; label: string; count: number }[];
 }
 
@@ -121,7 +119,7 @@ export default function StatistichePage() {
         <Kpi label="Aperte" value={data.totali.aperte} icon={FolderOpen} iconBg="bg-yellow-100" iconColor="text-yellow-600" />
         <Kpi label="Chiuse" value={data.totali.chiuse} icon={CheckCircle2} iconBg="bg-green-100" iconColor="text-green-600" />
         <Kpi label="Clienti" value={data.totali.clienti} icon={Users} iconBg="bg-blue-100" iconColor="text-blue-600" />
-        <Kpi label="CAT attivi" value={data.totali.cat} icon={Building2} iconBg="bg-purple-100" iconColor="text-purple-600" />
+        <Kpi label="Operatori" value={data.totali.operatori} icon={UserCog} iconBg="bg-purple-100" iconColor="text-purple-600" />
         <Kpi label="Tempo medio risol." value={tempoMedio} icon={Timer} iconBg="bg-gray-100" iconColor="text-gray-600" />
       </div>
 
@@ -172,35 +170,15 @@ export default function StatistichePage() {
           </CardContent>
         </Card>
 
-        {/* Per CAT */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Building2 className="h-4 w-4" /> Pratiche per CAT
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <BarList items={data.perCat} colorClass="bg-purple-500" />
-          </CardContent>
-        </Card>
-
         {/* Per operatore */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Prese in carico per operatore</CardTitle>
+            <CardTitle className="text-base flex items-center gap-2">
+              <UserCog className="h-4 w-4" /> Pratiche per operatore
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <BarList items={data.perOperatore} colorClass="bg-blue-500" />
-          </CardContent>
-        </Card>
-
-        {/* Per manutentore */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Pratiche per manutentore</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <BarList items={data.perManutentore} colorClass="bg-green-500" />
           </CardContent>
         </Card>
       </div>

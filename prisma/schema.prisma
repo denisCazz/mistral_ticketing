@@ -9,13 +9,11 @@ datasource db {
 enum Role {
   ADMIN
   OPERATORE
-  MANUTENTORE
 }
 
 enum StatoPratica {
   RICEVUTA
   PRESA_IN_CARICO
-  PRESA_IN_CARICO_MANUTENTORE
   IN_ATTESA_RICAMBI
   COMPLETATA
   ANNULLATA
@@ -29,19 +27,14 @@ model User {
   passwordHash String
   role         Role     @default(OPERATORE)
   active       Boolean  @default(true)
-  catId        String?
   firma        String?
   qualifica    String?
   telefono     String?
   createdAt    DateTime @default(now())
 
-  cat                     Cat?            @relation(fields: [catId], references: [id])
-  praticheComeOperatore   Pratica[]       @relation("OperatoreRelation")
-  praticheComeManutentore Pratica[]       @relation("ManutentoreRelation")
-  cambiamentiStato        PraticaStoria[]
-  rapportini              Rapportino[]
-
-  @@index([catId])
+  praticheComeOperatore Pratica[]       @relation("OperatoreRelation")
+  cambiamentiStato      PraticaStoria[]
+  rapportini            Rapportino[]
 }
 
 model Cliente {
@@ -77,27 +70,6 @@ model Cliente {
   @@index([cognome])
 }
 
-model Cat {
-  id             String   @id @default(cuid())
-  ragioneSociale String
-  referenti      String[] @default([])
-  emails         String[] @default([])
-  telefono       String?
-  indirizzo      String?
-  cap            String?
-  citta          String?
-  provincia      String?
-  note           String?
-  active         Boolean  @default(true)
-  sourceId       String?
-  createdAt      DateTime @default(now())
-
-  pratiche Pratica[]
-  utenti   User[]
-
-  @@index([ragioneSociale])
-}
-
 model Pratica {
   id             String       @id @default(cuid())
   numeroPratica  String       @unique
@@ -105,25 +77,20 @@ model Pratica {
   tipoIntervento String?
   descrizione    String?
   stato          StatoPratica @default(RICEVUTA)
+  /// Operatore a cui è assegnata la pratica (visibilità: admin vede tutte, operatore solo le sue)
   operatoreId    String
-  manutentoreId  String?
-  catId          String?
   noteInterne    String?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  cliente     Cliente         @relation(fields: [clienteId], references: [id])
-  operatore   User            @relation("OperatoreRelation", fields: [operatoreId], references: [id])
-  manutentore User?           @relation("ManutentoreRelation", fields: [manutentoreId], references: [id])
-  cat         Cat?            @relation(fields: [catId], references: [id])
-  storia      PraticaStoria[]
-  rapportini  Rapportino[]
+  cliente    Cliente         @relation(fields: [clienteId], references: [id])
+  operatore  User            @relation("OperatoreRelation", fields: [operatoreId], references: [id])
+  storia     PraticaStoria[]
+  rapportini Rapportino[]
 
   @@index([stato])
   @@index([clienteId])
   @@index([operatoreId])
-  @@index([manutentoreId])
-  @@index([catId])
 }
 
 model PraticaStoria {
@@ -153,55 +120,59 @@ model XlsxDuplicato {
   @@index([risolto])
 }
 
-/// Rapportino di intervento (dal modulo Bitora/rapportini)
+/// Rapportino di intervento (antincendio / elettrico)
 model Rapportino {
-  id                            String    @id @default(cuid())
-  utenteId                      String
-  clienteId                     String
-  praticaId                     String?
-  dataRichiesta                 DateTime? @db.Date
-  dataIntervento                DateTime  @db.Date
-  oraIntervento                 String?
-  tipologiaIntervento           String?
-  tipoStufa                     String
-  marca                         String
-  modello                       String
-  numeroSerie                   String?
-  dataAcquisto                  DateTime? @db.Date
-  rivenditore                   String?
-  tipoIntervento                String
-  motivoChiamata                String?
-  codiceErrore                  String?
-  verifiche                     String?
-  installazioneEseguitaDa       String?
-  descrizione                   String
-  spiegataManutenzione          String?
-  impiantoElettrico             String?
-  condottoFumi                  String?
-  installazioneUni10683         String?
-  controlloParametri            String?
-  presaVisioneCondizioniGaranzia Boolean? @default(false)
-  tipologiaInstallazione        String?
-  noteInstallazione             String?
-  prossimoIntervento            DateTime? @db.Date
-  materialiUtilizzati           String?
-  note                          String?
-  firmaClientePrivacy           String?
-  firmaOperatore                String?
-  firmaCliente                  String?
-  createdAt                     DateTime  @default(now())
-  updatedAt                     DateTime  @updatedAt
+  id                             String    @id @default(cuid())
+  utenteId                       String
+  clienteId                      String
+  praticaId                      String?
+  dataRichiesta                  DateTime? @db.Date
+  dataIntervento                 DateTime  @db.Date
+  oraIntervento                  String?
+  tipologiaIntervento            String?
+  /// antincendio | elettrico
+  settore                        String
+  /// es. estintore, idrante, quadro_elettrico…
+  tipoImpianto                   String
+  marca                          String
+  modello                        String
+  numeroSerie                    String?
+  dataAcquisto                   DateTime? @db.Date
+  rivenditore                    String?
+  tipoIntervento                 String
+  motivoChiamata                 String?
+  codiceErrore                   String?
+  verifiche                      String?
+  installazioneEseguitaDa        String?
+  descrizione                    String
+  spiegataManutenzione           String?
+  accessibilita                  String?
+  integritaComponente            String?
+  conformitaNormativa            String?
+  esitoFunzionamento             String?
+  presaVisioneCondizioniGaranzia Boolean?  @default(false)
+  ubicazione                     String?
+  noteUbicazione                 String?
+  prossimoIntervento             DateTime? @db.Date
+  materialiUtilizzati            String?
+  note                           String?
+  firmaClientePrivacy            String?
+  firmaOperatore                 String?
+  firmaCliente                   String?
+  createdAt                      DateTime  @default(now())
+  updatedAt                      DateTime  @updatedAt
 
-  utente   User                   @relation(fields: [utenteId], references: [id], onDelete: Restrict)
-  cliente  Cliente                @relation(fields: [clienteId], references: [id], onDelete: Restrict)
-  pratica  Pratica?               @relation(fields: [praticaId], references: [id], onDelete: SetNull)
+  utente   User                 @relation(fields: [utenteId], references: [id], onDelete: Restrict)
+  cliente  Cliente              @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  pratica  Pratica?             @relation(fields: [praticaId], references: [id], onDelete: SetNull)
   immagini RapportinoImmagine[]
 
   @@index([clienteId])
   @@index([utenteId])
   @@index([praticaId])
   @@index([dataIntervento])
-  @@index([tipoStufa])
+  @@index([settore])
+  @@index([tipoImpianto])
 }
 
 model RapportinoImmagine {

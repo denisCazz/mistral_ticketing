@@ -1,4 +1,8 @@
-import type { SiNoNc, TipologiaInstallazione, TipologiaIntervento } from "@/lib/rapportino-constants";
+import type {
+  SiNoNc,
+  Settore,
+  TipologiaIntervento,
+} from "@/lib/rapportino-constants";
 
 export interface RapportinoCliente {
   id: string;
@@ -30,7 +34,8 @@ export interface RapportinoDTO {
   dataIntervento: string;
   oraIntervento?: string | null;
   tipologiaIntervento?: TipologiaIntervento | string | null;
-  tipoStufa: "pellet" | "legno" | string;
+  settore: Settore | string;
+  tipoImpianto: string;
   marca: string;
   modello: string;
   numeroSerie?: string | null;
@@ -43,13 +48,13 @@ export interface RapportinoDTO {
   installazioneEseguitaDa?: string | null;
   descrizione: string;
   spiegataManutenzione?: SiNoNc | string | null;
-  impiantoElettrico?: SiNoNc | string | null;
-  condottoFumi?: SiNoNc | string | null;
-  installazioneUni10683?: SiNoNc | string | null;
-  controlloParametri?: SiNoNc | string | null;
+  accessibilita?: SiNoNc | string | null;
+  integritaComponente?: SiNoNc | string | null;
+  conformitaNormativa?: SiNoNc | string | null;
+  esitoFunzionamento?: SiNoNc | string | null;
   presaVisioneCondizioniGaranzia?: boolean | null;
-  tipologiaInstallazione?: TipologiaInstallazione | string | null;
-  noteInstallazione?: string | null;
+  ubicazione?: string | null;
+  noteUbicazione?: string | null;
   prossimoIntervento?: string | null;
   materialiUtilizzati?: string | null;
   note?: string | null;

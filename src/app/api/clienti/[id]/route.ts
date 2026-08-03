@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { isCatUser } from "@/lib/access";
+import { praticaWhereForSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
 
@@ -24,9 +24,6 @@ export async function GET(
 ) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (session.user?.role === "MANUTENTORE") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   const { id } = await params;
 
@@ -34,24 +31,16 @@ export async function GET(
     where: { id },
     include: {
       pratiche: {
+        where: praticaWhereForSession(session),
         orderBy: { createdAt: "desc" },
         include: {
           operatore: { select: { id: true, name: true } },
-          cat: { select: { id: true, ragioneSociale: true } },
         },
       },
     },
   });
 
   if (!cliente) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  if (isCatUser(session)) {
-    const catId = session.user!.catId!;
-    return NextResponse.json({
-      ...cliente,
-      pratiche: cliente.pratiche.filter((p) => p.catId === catId),
-    });
-  }
 
   return NextResponse.json(cliente);
 }
@@ -62,9 +51,6 @@ export async function PATCH(
 ) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (session.user?.role === "MANUTENTORE") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   const { id } = await params;
   const body = await req.json();

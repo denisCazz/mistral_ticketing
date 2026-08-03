@@ -8,13 +8,26 @@ const createSchema = z.object({
   name: z.string().min(1),
   email: z.string().email(),
   password: z.string().min(6),
-  role: z.enum(["ADMIN", "OPERATORE", "MANUTENTORE"]),
-  catId: z.string().min(1).optional().nullable(),
+  role: z.enum(["ADMIN", "OPERATORE"]),
 });
 
-export async function GET() {
+export async function GET(req: Request) {
   const session = await auth();
-  if (!session || session.user?.role !== "ADMIN") {
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { searchParams } = new URL(req.url);
+  const assegnabili = searchParams.get("assegnabili") === "1";
+
+  if (assegnabili) {
+    const users = await prisma.user.findMany({
+      where: { active: true, role: { in: ["ADMIN", "OPERATORE"] } },
+      select: { id: true, name: true, email: true, role: true },
+      orderBy: { name: "asc" },
+    });
+    return NextResponse.json(users);
+  }
+
+  if (session.user?.role !== "ADMIN") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -26,8 +39,6 @@ export async function GET() {
       role: true,
       active: true,
       createdAt: true,
-      catId: true,
-      cat: { select: { id: true, ragioneSociale: true } },
     },
     orderBy: { name: "asc" },
   });
@@ -47,7 +58,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { name, email, password, role, catId } = parsed.data;
+  const { name, email, password, role } = parsed.data;
 
   const exists = await prisma.user.findUnique({ where: { email } });
   if (exists) {
@@ -57,7 +68,7 @@ export async function POST(req: Request) {
   const passwordHash = await bcrypt.hash(password, 12);
 
   const user = await prisma.user.create({
-    data: { name, email, passwordHash, role, catId: catId || null },
+    data: { name, email, passwordHash, role },
     select: {
       id: true,
       name: true,
@@ -65,8 +76,6 @@ export async function POST(req: Request) {
       role: true,
       active: true,
       createdAt: true,
-      catId: true,
-      cat: { select: { id: true, ragioneSociale: true } },
     },
   });
 

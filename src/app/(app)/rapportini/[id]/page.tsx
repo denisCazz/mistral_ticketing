@@ -10,9 +10,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { AziendaSettingsDTO, RapportinoDTO } from "@/types/rapportino";
 import { downloadRapportinoPDF } from "@/lib/pdf-rapportino";
 import {
+  formatSettore,
   formatSiNoNc,
-  formatTipologiaInstallazione,
+  formatTipoImpianto,
   formatTipologiaIntervento,
+  formatUbicazione,
+  getControlloFields,
+  type Settore,
 } from "@/lib/rapportino-constants";
 import { cn } from "@/lib/utils";
 
@@ -78,15 +82,20 @@ export default function RapportinoDetailPage() {
     );
   }
 
+  const settore = (item.settore === "elettrico" ? "elettrico" : "antincendio") as Settore;
+  const controlli = getControlloFields(settore);
+
   const rows: Array<[string, string]> = [
     ["Cliente", item.cliente?.ragioneSociale || "—"],
     ["Data", item.dataIntervento + (item.oraIntervento ? ` · ${item.oraIntervento}` : "")],
     ["Operatore", item.utente?.name || "—"],
     ["Pratica", item.pratica?.numeroPratica || "—"],
-    ["Tipologia", formatTipologiaIntervento(item.tipologiaIntervento)],
-    ["Stufa", `${item.tipoStufa} · ${item.marca} ${item.modello}`],
+    ["Settore", formatSettore(item.settore)],
+    ["Impianto", `${formatTipoImpianto(item.tipoImpianto)} · ${item.marca} ${item.modello}`],
     ["N° serie", item.numeroSerie || "—"],
+    ["Tipologia", formatTipologiaIntervento(item.tipologiaIntervento)],
     ["Tipo intervento", item.tipoIntervento],
+    ["Ubicazione", formatUbicazione(item.ubicazione)],
     ["Motivo", item.motivoChiamata || "—"],
   ];
 
@@ -98,7 +107,8 @@ export default function RapportinoDetailPage() {
             {item.cliente?.ragioneSociale || "Rapportino"}
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            {item.marca} {item.modello} · {item.dataIntervento}
+            {formatSettore(item.settore)} · {formatTipoImpianto(item.tipoImpianto)} ·{" "}
+            {item.dataIntervento}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -144,15 +154,12 @@ export default function RapportinoDetailPage() {
           <CardTitle className="text-base">Controlli</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <p>Manutenzione spiegata: {formatSiNoNc(item.spiegataManutenzione as never)}</p>
-          <p>Impianto elettrico: {formatSiNoNc(item.impiantoElettrico as never)}</p>
-          <p>Condotto fumi: {formatSiNoNc(item.condottoFumi as never)}</p>
-          <p>UNI 10683: {formatSiNoNc(item.installazioneUni10683 as never)}</p>
-          <p>Parametri: {formatSiNoNc(item.controlloParametri as never)}</p>
-          <p>
-            Installazione:{" "}
-            {formatTipologiaInstallazione(item.tipologiaInstallazione as never)}
-          </p>
+          {controlli.map((field) => (
+            <p key={field.key}>
+              {field.label}:{" "}
+              {formatSiNoNc(item[field.key] as never)}
+            </p>
+          ))}
         </CardContent>
       </Card>
 

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { canAssignOperatore, praticaWhereForSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { Prisma, StatoPratica } from "@prisma/client";
 import {
@@ -14,22 +15,14 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
   const stato = searchParams.get("stato") as StatoPratica | null;
-  const manutentoreId = searchParams.get("manutentoreId");
   const search = searchParams.get("search");
   const page = parseInt(searchParams.get("page") ?? "1");
   const limit = 20;
   const skip = (page - 1) * limit;
 
-  const where: Record<string, unknown> = {};
-
-  if (session.user?.catId) {
-    // Gli utenti collegati a un CAT vedono tutte e sole le pratiche di quel CAT.
-    where.catId = session.user.catId;
-  } else if (session.user?.role === "MANUTENTORE") {
-    where.manutentoreId = session.user.id;
-  } else {
-    if (manutentoreId) where.manutentoreId = manutentoreId;
-  }
+  const where: Record<string, unknown> = {
+    ...praticaWhereForSession(session),
+  };
 
   if (stato) where.stato = stato;
 
@@ -50,8 +43,6 @@ export async function GET(req: Request) {
       include: {
         cliente: { select: { id: true, ragioneSociale: true, cellulare: true } },
         operatore: { select: { id: true, name: true } },
-        manutentore: { select: { id: true, name: true } },
-        cat: { select: { id: true, ragioneSociale: true } },
       },
     }),
     prisma.pratica.count({ where }),
@@ -63,26 +54,35 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  // La creazione/ricezione della pratica è riservata al personale interno Mistral
-  // (Admin e operatori interni): manutentori e operatori CAT non creano pratiche.
-  if (session.user?.role === "MANUTENTORE" || session.user?.catId) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   const body = await req.json();
-  const { clienteId, tipoIntervento, descrizione, manutentoreId, catId, noteInterne, stato } = body;
+  const { clienteId, tipoIntervento, descrizione, operatoreId, noteInterne, stato } = body;
 
   if (!clienteId) {
     return NextResponse.json({ error: "clienteId obbligatorio" }, { status: 400 });
+  }
+
+  // Admin può assegnare a un operatore; altrimenti la pratica va a chi la crea.
+  let assegnatarioId = session.user.id!;
+  if (operatoreId && canAssignOperatore(session)) {
+    const target = await prisma.user.findFirst({
+      where: {
+        id: operatoreId,
+        active: true,
+        role: { in: ["ADMIN", "OPERATORE"] },
+      },
+      select: { id: true },
+    });
+    if (!target) {
+      return NextResponse.json({ error: "Operatore non valido" }, { status: 400 });
+    }
+    assegnatarioId = target.id;
   }
 
   const statoIniziale = (stato as StatoPratica) || "RICEVUTA";
   const year = new Date().getFullYear();
   const prefix = `MIS-${year}-`;
 
-  // Genera il numero pratica in modo resiliente: calcola il progressivo dal
-  // massimo esistente dell'anno e riprova in caso di conflitto sull'unique
-  // (create concorrenti). Evita i duplicati del vecchio approccio con count().
   let pratica;
   for (let attempt = 0; attempt < 5; attempt++) {
     const ultima = await prisma.pratica.findFirst({
@@ -103,9 +103,7 @@ export async function POST(req: Request) {
           tipoIntervento,
           descrizione,
           stato: statoIniziale,
-          operatoreId: session.user.id!,
-          manutentoreId: manutentoreId || null,
-          catId: catId || null,
+          operatoreId: assegnatarioId,
           noteInterne,
         },
         include: praticaIncludeForNotify,
@@ -141,10 +139,7 @@ export async function POST(req: Request) {
 
   const before: PraticaForNotify = {
     ...pratica,
-    catId: null,
-    manutentoreId: null,
-    cat: null,
-    manutentore: null,
+    operatoreId: session.user.id!,
   };
 
   notifyPraticaChanges({

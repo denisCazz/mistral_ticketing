@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { SETTORE_VALUES, TIPO_IMPIANTO_BY_SETTORE } from "@/lib/rapportino-constants";
 import { toDateOnlyString } from "@/types/rapportino";
 import { z } from "zod";
+
+const allTipiImpianto = [
+  ...TIPO_IMPIANTO_BY_SETTORE.antincendio,
+  ...TIPO_IMPIANTO_BY_SETTORE.elettrico,
+] as [string, ...string[]];
 
 const createSchema = z.object({
   clienteId: z.string().min(1),
@@ -11,7 +17,8 @@ const createSchema = z.object({
   dataIntervento: z.string().min(1),
   oraIntervento: z.string().optional().nullable(),
   tipologiaIntervento: z.string().optional().nullable(),
-  tipoStufa: z.enum(["pellet", "legno"]),
+  settore: z.enum(SETTORE_VALUES),
+  tipoImpianto: z.enum(allTipiImpianto),
   marca: z.string().min(1),
   modello: z.string().min(1),
   numeroSerie: z.string().optional().nullable(),
@@ -24,13 +31,13 @@ const createSchema = z.object({
   installazioneEseguitaDa: z.string().optional().nullable(),
   descrizione: z.string().min(1),
   spiegataManutenzione: z.string().optional().nullable(),
-  impiantoElettrico: z.string().optional().nullable(),
-  condottoFumi: z.string().optional().nullable(),
-  installazioneUni10683: z.string().optional().nullable(),
-  controlloParametri: z.string().optional().nullable(),
+  accessibilita: z.string().optional().nullable(),
+  integritaComponente: z.string().optional().nullable(),
+  conformitaNormativa: z.string().optional().nullable(),
+  esitoFunzionamento: z.string().optional().nullable(),
   presaVisioneCondizioniGaranzia: z.boolean().optional().nullable(),
-  tipologiaInstallazione: z.string().optional().nullable(),
-  noteInstallazione: z.string().optional().nullable(),
+  ubicazione: z.string().optional().nullable(),
+  noteUbicazione: z.string().optional().nullable(),
   prossimoIntervento: z.string().optional().nullable(),
   materialiUtilizzati: z.string().optional().nullable(),
   note: z.string().optional().nullable(),
@@ -48,7 +55,8 @@ function mapRapportino(r: {
   dataIntervento: Date;
   oraIntervento: string | null;
   tipologiaIntervento: string | null;
-  tipoStufa: string;
+  settore: string;
+  tipoImpianto: string;
   marca: string;
   modello: string;
   numeroSerie: string | null;
@@ -61,13 +69,13 @@ function mapRapportino(r: {
   installazioneEseguitaDa: string | null;
   descrizione: string;
   spiegataManutenzione: string | null;
-  impiantoElettrico: string | null;
-  condottoFumi: string | null;
-  installazioneUni10683: string | null;
-  controlloParametri: string | null;
+  accessibilita: string | null;
+  integritaComponente: string | null;
+  conformitaNormativa: string | null;
+  esitoFunzionamento: string | null;
   presaVisioneCondizioniGaranzia: boolean | null;
-  tipologiaInstallazione: string | null;
-  noteInstallazione: string | null;
+  ubicazione: string | null;
+  noteUbicazione: string | null;
   prossimoIntervento: Date | null;
   materialiUtilizzati: string | null;
   note: string | null;
@@ -105,7 +113,7 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = request.nextUrl;
   const search = searchParams.get("search")?.trim();
-  const tipoStufa = searchParams.get("tipoStufa") || undefined;
+  const settore = searchParams.get("settore") || undefined;
   const page = Math.max(1, Number(searchParams.get("page") || 1));
   const limit = Math.min(50, Math.max(1, Number(searchParams.get("limit") || 20)));
 
@@ -113,13 +121,14 @@ export async function GET(request: NextRequest) {
   if (session.user.role !== "ADMIN") {
     where.utenteId = session.user.id;
   }
-  if (tipoStufa === "pellet" || tipoStufa === "legno") {
-    where.tipoStufa = tipoStufa;
+  if (settore === "antincendio" || settore === "elettrico") {
+    where.settore = settore;
   }
   if (search) {
     where.OR = [
       { marca: { contains: search, mode: "insensitive" } },
       { modello: { contains: search, mode: "insensitive" } },
+      { tipoImpianto: { contains: search, mode: "insensitive" } },
       { descrizione: { contains: search, mode: "insensitive" } },
       { cliente: { ragioneSociale: { contains: search, mode: "insensitive" } } },
     ];
@@ -178,6 +187,14 @@ export async function POST(request: NextRequest) {
   }
 
   const data = parsed.data;
+  const allowed = TIPO_IMPIANTO_BY_SETTORE[data.settore] as readonly string[];
+  if (!allowed.includes(data.tipoImpianto)) {
+    return NextResponse.json(
+      { error: "Tipo impianto non valido per il settore selezionato" },
+      { status: 400 }
+    );
+  }
+
   const cliente = await prisma.cliente.findUnique({ where: { id: data.clienteId } });
   if (!cliente) {
     return NextResponse.json({ error: "Cliente non trovato" }, { status: 404 });
@@ -199,7 +216,8 @@ export async function POST(request: NextRequest) {
       dataIntervento: new Date(data.dataIntervento),
       oraIntervento: data.oraIntervento || null,
       tipologiaIntervento: data.tipologiaIntervento || null,
-      tipoStufa: data.tipoStufa,
+      settore: data.settore,
+      tipoImpianto: data.tipoImpianto,
       marca: data.marca,
       modello: data.modello,
       numeroSerie: data.numeroSerie || null,
@@ -212,13 +230,13 @@ export async function POST(request: NextRequest) {
       installazioneEseguitaDa: data.installazioneEseguitaDa || null,
       descrizione: data.descrizione,
       spiegataManutenzione: data.spiegataManutenzione || null,
-      impiantoElettrico: data.impiantoElettrico || null,
-      condottoFumi: data.condottoFumi || null,
-      installazioneUni10683: data.installazioneUni10683 || null,
-      controlloParametri: data.controlloParametri || null,
+      accessibilita: data.accessibilita || null,
+      integritaComponente: data.integritaComponente || null,
+      conformitaNormativa: data.conformitaNormativa || null,
+      esitoFunzionamento: data.esitoFunzionamento || null,
       presaVisioneCondizioniGaranzia: data.presaVisioneCondizioniGaranzia ?? false,
-      tipologiaInstallazione: data.tipologiaInstallazione || null,
-      noteInstallazione: data.noteInstallazione || null,
+      ubicazione: data.ubicazione || null,
+      noteUbicazione: data.noteUbicazione || null,
       prossimoIntervento: parseOptionalDate(data.prossimoIntervento),
       materialiUtilizzati: data.materialiUtilizzati || null,
       note: data.note || null,

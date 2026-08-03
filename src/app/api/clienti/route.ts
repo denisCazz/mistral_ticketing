@@ -21,11 +21,9 @@ export async function GET(req: Request) {
   const search = searchParams.get("search") ?? "";
   const page = parseInt(searchParams.get("page") ?? "1");
   const limitParam = parseInt(searchParams.get("limit") ?? "20");
-  // Rapportini / select: allow larger page for MANUTENTORE (no anagrafica UI)
-  const defaultLimit = session.user?.role === "MANUTENTORE" ? 100 : 20;
   const limit = Number.isFinite(limitParam)
     ? Math.min(Math.max(limitParam, 1), 200)
-    : defaultLimit;
+    : 20;
   const skip = (page - 1) * limit;
 
   const where = search
@@ -57,9 +55,6 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (session.user?.role === "MANUTENTORE") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   const body = await req.json();
   const parsed = createSchema.safeParse(body);

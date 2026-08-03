@@ -25,6 +25,7 @@ import { Search, ArrowLeft, Plus, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { STATO_LABELS, STATI_ORDINE } from "@/lib/constants";
 import { StatoPratica } from "@prisma/client";
+import { useSession } from "next-auth/react";
 
 interface Cliente {
   id: string;
@@ -33,9 +34,9 @@ interface Cliente {
   cellulare: string | null;
 }
 
-interface Cat {
+interface Operatore {
   id: string;
-  ragioneSociale: string;
+  name: string;
 }
 
 const EMPTY_CLIENTE = {
@@ -56,11 +57,13 @@ export default function NuovaPraticaPage() {
 function NuovaPraticaContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === "ADMIN";
   const [searchQuery, setSearchQuery] = useState("");
   const [clienti, setClienti] = useState<Cliente[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
-  const [catList, setCatList] = useState<Cat[]>([]);
+  const [operatoriList, setOperatoriList] = useState<Operatore[]>([]);
   const [loading, setLoading] = useState(false);
   const [clienteDialogOpen, setClienteDialogOpen] = useState(false);
   const [clienteForm, setClienteForm] = useState(EMPTY_CLIENTE);
@@ -69,7 +72,7 @@ function NuovaPraticaContent() {
   const [form, setForm] = useState({
     tipoIntervento: "",
     descrizione: "",
-    catId: "",
+    operatoreId: "",
     stato: "RICEVUTA" as StatoPratica,
     noteInterne: "",
   });
@@ -84,10 +87,11 @@ function NuovaPraticaContent() {
   }, [searchParams]);
 
   useEffect(() => {
-    fetch("/api/cat?list=1")
+    if (!isAdmin) return;
+    fetch("/api/utenti?assegnabili=1")
       .then((r) => (r.ok ? r.json() : []))
-      .then((data: Cat[]) => setCatList(Array.isArray(data) ? data : []));
-  }, []);
+      .then((data: Operatore[]) => setOperatoriList(Array.isArray(data) ? data : []));
+  }, [isAdmin]);
 
   useEffect(() => {
     if (searchQuery.length < 2) {
@@ -145,7 +149,7 @@ function NuovaPraticaContent() {
         clienteId: selectedCliente.id,
         tipoIntervento: form.tipoIntervento,
         descrizione: form.descrizione,
-        catId: form.catId || null,
+        operatoreId: form.operatoreId || undefined,
         stato: form.stato,
         noteInterne: form.noteInterne,
       }),
@@ -248,7 +252,7 @@ function NuovaPraticaContent() {
               <Label htmlFor="tipoIntervento">Tipo intervento</Label>
               <Input
                 id="tipoIntervento"
-                placeholder="es. Manutenzione ordinaria stufa a pellet"
+                placeholder="es. Manutenzione periodica estintori / verifica quadro elettrico"
                 value={form.tipoIntervento}
                 onChange={(e) => setForm((f) => ({ ...f, tipoIntervento: e.target.value }))}
               />
@@ -263,27 +267,31 @@ function NuovaPraticaContent() {
                 onChange={(e) => setForm((f) => ({ ...f, descrizione: e.target.value }))}
               />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="cat">Assegna CAT (opzionale)</Label>
-              <Select
-                value={form.catId || "none"}
-                onValueChange={(v) => setForm((f) => ({ ...f, catId: v === "none" ? "" : (v ?? "") }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Nessun CAT">
-                    {form.catId
-                      ? catList.find((c) => c.id === form.catId)?.ragioneSociale
-                      : undefined}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Nessun CAT</SelectItem>
-                  {catList.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.ragioneSociale}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {isAdmin && (
+              <div className="space-y-1">
+                <Label htmlFor="operatore">Assegna operatore</Label>
+                <Select
+                  value={form.operatoreId || "self"}
+                  onValueChange={(v) =>
+                    setForm((f) => ({ ...f, operatoreId: v === "self" ? "" : (v ?? "") }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Me stesso">
+                      {form.operatoreId
+                        ? operatoriList.find((o) => o.id === form.operatoreId)?.name
+                        : "Me stesso"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="self">Me stesso</SelectItem>
+                    {operatoriList.map((o) => (
+                      <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1">
               <Label htmlFor="stato">Assegna stato</Label>
               <Select

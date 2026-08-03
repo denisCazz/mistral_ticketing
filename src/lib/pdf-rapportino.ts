@@ -2,10 +2,14 @@ import { format } from "date-fns";
 import { it } from "date-fns/locale";
 import type { AziendaSettingsDTO, RapportinoDTO } from "@/types/rapportino";
 import {
+  formatSettore,
   formatSiNoNc,
-  formatTipologiaInstallazione,
+  formatTipoImpianto,
   formatTipologiaIntervento,
+  formatUbicazione,
+  getControlloFields,
   TIPOLOGIA_INTERVENTO_LABELS,
+  type Settore,
 } from "@/lib/rapportino-constants";
 
 function safe(value: string | null | undefined, fallback = "—") {
@@ -61,6 +65,8 @@ export async function downloadRapportinoPDF(
     ["Telefono", safe(rapportino.cliente?.cellulare || rapportino.cliente?.telFisso)],
     ["Data intervento", `${dataInt}${rapportino.oraIntervento ? ` · ${rapportino.oraIntervento}` : ""}`],
     ["Operatore", safe(rapportino.utente?.name)],
+    ["Settore", formatSettore(rapportino.settore)],
+    ["Tipo impianto", formatTipoImpianto(rapportino.tipoImpianto)],
     [
       "Tipologia",
       rapportino.tipologiaIntervento &&
@@ -68,12 +74,12 @@ export async function downloadRapportinoPDF(
         ? formatTipologiaIntervento(rapportino.tipologiaIntervento as never)
         : safe(rapportino.tipologiaIntervento),
     ],
-    ["Tipo stufa", safe(rapportino.tipoStufa)],
     ["Marca / Modello", `${safe(rapportino.marca)} / ${safe(rapportino.modello)}`],
     ["N° serie", safe(rapportino.numeroSerie)],
+    ["Ubicazione", formatUbicazione(rapportino.ubicazione)],
     ["Tipo intervento", safe(rapportino.tipoIntervento)],
     ["Motivo chiamata", safe(rapportino.motivoChiamata)],
-    ["Codice errore", safe(rapportino.codiceErrore)],
+    ["Codice anomalia", safe(rapportino.codiceErrore)],
   ];
 
   doc.setFontSize(11);
@@ -99,17 +105,13 @@ export async function downloadRapportinoPDF(
   doc.text(desc, 14, y);
   y += desc.length * 5 + 6;
 
-  const checks = [
-    ["Manutenzione spiegata", formatSiNoNc(rapportino.spiegataManutenzione as never)],
-    ["Impianto elettrico", formatSiNoNc(rapportino.impiantoElettrico as never)],
-    ["Condotto fumi", formatSiNoNc(rapportino.condottoFumi as never)],
-    ["UNI 10683", formatSiNoNc(rapportino.installazioneUni10683 as never)],
-    ["Controllo parametri", formatSiNoNc(rapportino.controlloParametri as never)],
-    [
-      "Tipologia installazione",
-      formatTipologiaInstallazione(rapportino.tipologiaInstallazione as never),
-    ],
-  ];
+  const settore = (
+    rapportino.settore === "elettrico" ? "elettrico" : "antincendio"
+  ) as Settore;
+  const checks = getControlloFields(settore).map((field) => [
+    field.label,
+    formatSiNoNc(rapportino[field.key] as never),
+  ]);
 
   if (y > 240) {
     doc.addPage();
@@ -117,12 +119,17 @@ export async function downloadRapportinoPDF(
   }
 
   doc.setFont("helvetica", "bold");
-  doc.text("Controlli / garanzia", 14, y);
+  doc.text("Controlli conformità", 14, y);
   y += 7;
   doc.setFont("helvetica", "normal");
   for (const [label, value] of checks) {
-    doc.text(`${label}: ${value || "—"}`, 14, y);
-    y += 6;
+    const lines = doc.splitTextToSize(`${label}: ${value || "—"}`, 182);
+    doc.text(lines, 14, y);
+    y += lines.length * 5 + 1;
+    if (y > 270) {
+      doc.addPage();
+      y = 20;
+    }
   }
 
   if (rapportino.materialiUtilizzati?.trim()) {

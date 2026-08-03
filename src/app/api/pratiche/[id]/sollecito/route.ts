@@ -3,16 +3,16 @@ import { auth } from "@/lib/auth";
 import { canAccessPratica } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { STATO_LABELS } from "@/lib/constants";
-import { catSollecitoEmail, sendEmail } from "@/lib/email";
+import { sollecitoEmail, sendEmail } from "@/lib/email";
 
-// POST /api/pratiche/[id]/sollecito — invia sollecito email al CAT assegnato.
+// POST /api/pratiche/[id]/sollecito — invia sollecito email all'operatore assegnato.
 export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (session.user?.role === "MANUTENTORE") {
+  if (session.user?.role !== "ADMIN") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -22,7 +22,7 @@ export async function POST(
     where: { id },
     include: {
       cliente: { select: { ragioneSociale: true } },
-      cat: { select: { ragioneSociale: true, emails: true } },
+      operatore: { select: { name: true, email: true } },
     },
   });
 
@@ -30,22 +30,28 @@ export async function POST(
   if (!canAccessPratica(session, pratica)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  if (!pratica.cat?.emails?.length) {
-    return NextResponse.json({ error: "Nessun CAT (o email) assegnato alla pratica" }, { status: 400 });
+  if (!pratica.operatore?.email) {
+    return NextResponse.json(
+      { error: "Nessuna email per l'operatore assegnato" },
+      { status: 400 }
+    );
   }
 
-  const { subject, html } = catSollecitoEmail({
-    catNome: pratica.cat.ragioneSociale,
+  const { subject, html } = sollecitoEmail({
+    destinatarioNome: pratica.operatore.name,
     praticaId: pratica.id,
     numeroPratica: pratica.numeroPratica,
     cliente: pratica.cliente.ragioneSociale,
     stato: STATO_LABELS[pratica.stato],
   });
 
-  const sent = await sendEmail({ to: pratica.cat.emails, subject, html });
+  const sent = await sendEmail({ to: pratica.operatore.email, subject, html });
   if (!sent) {
-    return NextResponse.json({ error: "Invio email fallito (verifica RESEND_API_KEY)" }, { status: 502 });
+    return NextResponse.json(
+      { error: "Invio email fallito (verifica RESEND_API_KEY)" },
+      { status: 502 }
+    );
   }
 
-  return NextResponse.json({ ok: true, to: pratica.cat.emails.join(", ") });
+  return NextResponse.json({ ok: true, to: pratica.operatore.email });
 }

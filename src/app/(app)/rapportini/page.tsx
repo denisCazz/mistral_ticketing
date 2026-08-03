@@ -7,7 +7,11 @@ import { buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import type { RapportinoDTO } from "@/types/rapportino";
-import { TIPOLOGIA_INTERVENTO_LABELS } from "@/lib/rapportino-constants";
+import {
+  formatSettore,
+  formatTipoImpianto,
+  TIPOLOGIA_INTERVENTO_LABELS,
+} from "@/lib/rapportino-constants";
 import { cn } from "@/lib/utils";
 
 export default function RapportiniPage() {
@@ -35,7 +39,7 @@ export default function RapportiniPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Rapportini</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Schede intervento stufe · {total} totali
+            Schede intervento antincendio / elettrico · {total} totali
           </p>
         </div>
         <Link
@@ -79,7 +83,8 @@ export default function RapportiniPage() {
                       {r.cliente?.ragioneSociale || "Cliente"}
                     </p>
                     <p className="text-sm text-gray-500">
-                      {r.marca} {r.modello} · {r.tipoStufa}
+                      {formatSettore(r.settore)} · {formatTipoImpianto(r.tipoImpianto)} ·{" "}
+                      {r.marca} {r.modello}
                       {r.tipologiaIntervento &&
                       r.tipologiaIntervento in TIPOLOGIA_INTERVENTO_LABELS
                         ? ` · ${TIPOLOGIA_INTERVENTO_LABELS[r.tipologiaIntervento as keyof typeof TIPOLOGIA_INTERVENTO_LABELS]}`

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { canAccessPratica } from "@/lib/access";
+import { canAccessPratica, canAssignOperatore } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import {
   notifyPraticaChanges,
@@ -15,28 +15,27 @@ export async function GET(
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const includeCats = new URL(req.url).searchParams.get("includeCats") === "1";
-  const canIncludeCats = includeCats && session.user?.role !== "MANUTENTORE";
+  const includeOperatori = new URL(req.url).searchParams.get("includeOperatori") === "1";
+  const canIncludeOperatori =
+    includeOperatori && canAssignOperatore(session);
 
-  const [pratica, catList] = await Promise.all([
+  const [pratica, operatoriList] = await Promise.all([
     prisma.pratica.findUnique({
       where: { id },
       include: {
         cliente: true,
         operatore: { select: { id: true, name: true, email: true } },
-        manutentore: { select: { id: true, name: true, email: true } },
-        cat: { select: { id: true, ragioneSociale: true, emails: true, telefono: true, referenti: true } },
         storia: {
           orderBy: { changedAt: "asc" },
           include: { changedBy: { select: { id: true, name: true } } },
         },
       },
     }),
-    canIncludeCats
-      ? prisma.cat.findMany({
-          where: { active: true },
-          select: { id: true, ragioneSociale: true },
-          orderBy: { ragioneSociale: "asc" },
+    canIncludeOperatori
+      ? prisma.user.findMany({
+          where: { active: true, role: { in: ["ADMIN", "OPERATORE"] } },
+          select: { id: true, name: true, email: true },
+          orderBy: { name: "asc" },
         })
       : Promise.resolve(null),
   ]);
@@ -47,11 +46,11 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  if (!includeCats || session.user?.role === "MANUTENTORE") {
+  if (!includeOperatori || !operatoriList) {
     return NextResponse.json(pratica);
   }
 
-  return NextResponse.json({ ...pratica, catList });
+  return NextResponse.json({ ...pratica, operatoriList });
 }
 
 export async function PUT(
@@ -60,13 +59,10 @@ export async function PUT(
 ) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (session.user?.role === "MANUTENTORE") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   const { id } = await params;
   const body = await req.json();
-  const { tipoIntervento, descrizione, manutentoreId, catId, noteInterne } = body;
+  const { tipoIntervento, descrizione, operatoreId, noteInterne } = body;
 
   const before = await prisma.pratica.findUnique({
     where: { id },
@@ -80,14 +76,28 @@ export async function PUT(
   const data: Record<string, unknown> = {};
   if (tipoIntervento !== undefined) data.tipoIntervento = tipoIntervento;
   if (descrizione !== undefined) data.descrizione = descrizione;
-  if (manutentoreId !== undefined) data.manutentoreId = manutentoreId || null;
-  if (catId !== undefined) {
-    if (session.user?.catId) {
+  if (noteInterne !== undefined) data.noteInterne = noteInterne;
+
+  if (operatoreId !== undefined) {
+    if (!canAssignOperatore(session)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    data.catId = catId || null;
+    if (!operatoreId) {
+      return NextResponse.json({ error: "Operatore obbligatorio" }, { status: 400 });
+    }
+    const target = await prisma.user.findFirst({
+      where: {
+        id: operatoreId,
+        active: true,
+        role: { in: ["ADMIN", "OPERATORE"] },
+      },
+      select: { id: true },
+    });
+    if (!target) {
+      return NextResponse.json({ error: "Operatore non valido" }, { status: 400 });
+    }
+    data.operatoreId = target.id;
   }
-  if (noteInterne !== undefined) data.noteInterne = noteInterne;
 
   const pratica = await prisma.pratica.update({
     where: { id },

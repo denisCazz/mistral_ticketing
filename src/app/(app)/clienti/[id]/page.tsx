@@ -32,7 +32,6 @@ interface ClienteDetail {
     tipoIntervento: string | null;
     createdAt: string;
     operatore: { id: string; name: string };
-    cat: { id: string; ragioneSociale: string } | null;
   }[];
 }
 
@@ -158,7 +157,6 @@ export default function ClienteDetailPage() {
                         <p className="text-sm font-medium font-mono text-orange-600">{p.numeroPratica}</p>
                         <p className="text-xs text-gray-500">
                           {p.tipoIntervento ?? "—"} · {p.operatore.name}
-                          {p.cat ? ` · ${p.cat.ragioneSociale}` : ""}
                         </p>
                       </div>
                       <div className="flex items-center gap-3">

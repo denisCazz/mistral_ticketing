@@ -3,12 +3,20 @@ import type { StatoPratica } from "@prisma/client";
 import { statiConsentitiPerUtente, statiTargetDisponibili } from "@/lib/constants";
 
 type PraticaAccess = {
-  catId: string | null;
-  manutentoreId?: string | null;
+  operatoreId: string;
 };
 
-export function isCatUser(session: Session | null): boolean {
-  return Boolean(session?.user?.catId);
+/** Filtro Prisma per le pratiche visibili all'utente della sessione. */
+export function praticaWhereForSession(
+  session: Session | null
+): Record<string, unknown> {
+  if (!session?.user?.id || !session.user.role) return { id: "__none__" };
+
+  if (session.user.role === "ADMIN") return {};
+  if (session.user.role === "OPERATORE") {
+    return { operatoreId: session.user.id };
+  }
+  return { id: "__none__" };
 }
 
 export function canSetStato(
@@ -17,38 +25,35 @@ export function canSetStato(
   statoCorrente?: StatoPratica
 ): boolean {
   if (!statoCorrente) {
-    return statiConsentitiPerUtente(
-      session?.user?.role,
-      session?.user?.catId
-    ).includes(stato);
+    return statiConsentitiPerUtente(session?.user?.role).includes(stato);
   }
   return statiTargetDisponibili(
     session?.user?.role,
-    session?.user?.catId,
     statoCorrente
   ).includes(stato);
 }
 
 export function canManageStati(session: Session | null): boolean {
   if (!session?.user?.role) return false;
-  if (session.user.catId) return true;
-  if (session.user.role === "MANUTENTORE") return false;
-  return statiConsentitiPerUtente(session.user.role, session.user.catId).length > 0;
+  return statiConsentitiPerUtente(session.user.role).length > 0;
+}
+
+/** Solo admin può assegnare/riassegnare l'operatore di una pratica. */
+export function canAssignOperatore(session: Session | null): boolean {
+  return session?.user?.role === "ADMIN";
 }
 
 export function canAccessPratica(
   session: Session | null,
   pratica: PraticaAccess
 ): boolean {
-  if (!session?.user) return false;
+  if (!session?.user?.id || !session.user.role) return false;
 
-  if (session.user.catId) {
-    return pratica.catId === session.user.catId;
+  if (session.user.role === "ADMIN") return true;
+
+  if (session.user.role === "OPERATORE") {
+    return pratica.operatoreId === session.user.id;
   }
 
-  if (session.user.role === "MANUTENTORE") {
-    return pratica.manutentoreId === session.user.id;
-  }
-
-  return true;
+  return false;
 }

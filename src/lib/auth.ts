@@ -23,24 +23,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) {
         token.id = user.id;
         token.role = (user as { role?: string }).role;
-        token.catId = (user as { catId?: string | null }).catId ?? null;
         token.refreshedAt = Date.now();
       }
 
-      // Aggiorna ruolo e CAT dal DB al massimo ogni 60s: evita query
-      // concorrenti su ogni richiesta (proxy + API + session) che causavano
-      // sessioni intermittenti e 403 sul cambio stato.
+      // Aggiorna ruolo dal DB al massimo ogni 60s: evita query
+      // concorrenti su ogni richiesta (proxy + API + session).
       if (token.id) {
         const now = Date.now();
         const lastRefresh = (token.refreshedAt as number | undefined) ?? 0;
         if (now - lastRefresh > 60_000) {
           const dbUser = await prisma.user.findUnique({
             where: { id: token.id as string },
-            select: { role: true, catId: true, active: true },
+            select: { role: true, active: true },
           });
           if (!dbUser?.active) return null;
           token.role = dbUser.role;
-          token.catId = dbUser.catId ?? null;
           token.refreshedAt = now;
         }
       }
@@ -51,7 +48,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (token?.id) {
         session.user.id = token.id as string;
         session.user.role = token.role as string;
-        session.user.catId = (token.catId as string | null) ?? null;
       }
       return session;
     },
@@ -74,7 +70,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               passwordHash: true,
               role: true,
               active: true,
-              catId: true,
             },
           });
 
@@ -88,7 +83,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             name: user.name,
             email: user.email,
             role: user.role,
-            catId: user.catId,
           };
         } catch (error) {
           console.error("[auth] authorize failed:", error);

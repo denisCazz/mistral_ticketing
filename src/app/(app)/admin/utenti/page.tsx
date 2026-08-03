@@ -12,8 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -22,37 +21,28 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, UserCog, CheckCircle, XCircle, Pencil, Trash2 } from "lucide-react";
 
-interface Cat {
-  id: string;
-  ragioneSociale: string;
-}
-
 interface User {
   id: string;
   name: string;
   email: string;
-  role: "ADMIN" | "OPERATORE" | "MANUTENTORE";
+  role: "ADMIN" | "OPERATORE";
   active: boolean;
   createdAt: string;
-  catId: string | null;
-  cat?: Cat | null;
 }
 
-const ROLE_LABELS = { ADMIN: "Admin", OPERATORE: "Operatore", MANUTENTORE: "Manutentore" };
+const ROLE_LABELS = { ADMIN: "Admin", OPERATORE: "Operatore" };
 const ROLE_COLORS = {
   ADMIN: "bg-red-100 text-red-700",
   OPERATORE: "bg-blue-100 text-blue-700",
-  MANUTENTORE: "bg-green-100 text-green-700",
 };
 
 export default function UtentiPage() {
   const [users, setUsers] = useState<User[]>([]);
-  const [catList, setCatList] = useState<Cat[]>([]);
   const [open, setOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
-  const [form, setForm] = useState({ name: "", email: "", password: "", role: "OPERATORE" as User["role"], catId: "" });
-  const [editForm, setEditForm] = useState({ name: "", password: "", role: "OPERATORE" as User["role"], catId: "" });
+  const [form, setForm] = useState({ name: "", email: "", password: "", role: "OPERATORE" as User["role"] });
+  const [editForm, setEditForm] = useState({ name: "", password: "", role: "OPERATORE" as User["role"] });
   const [loading, setLoading] = useState(false);
 
   async function fetchUsers() {
@@ -62,19 +52,13 @@ export default function UtentiPage() {
 
   useEffect(() => { fetchUsers(); }, []);
 
-  useEffect(() => {
-    fetch("/api/cat?list=1")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data: Cat[]) => setCatList(Array.isArray(data) ? data : []));
-  }, []);
-
   async function createUser(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     const res = await fetch("/api/utenti", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, catId: form.catId || null }),
+      body: JSON.stringify(form),
     });
     setLoading(false);
     if (!res.ok) {
@@ -84,7 +68,7 @@ export default function UtentiPage() {
     }
     toast.success("Utente creato");
     setOpen(false);
-    setForm({ name: "", email: "", password: "", role: "OPERATORE", catId: "" });
+    setForm({ name: "", email: "", password: "", role: "OPERATORE" });
     fetchUsers();
   }
 
@@ -119,7 +103,7 @@ export default function UtentiPage() {
 
   function openEdit(user: User) {
     setEditing(user);
-    setEditForm({ name: user.name, password: "", role: user.role, catId: user.catId ?? "" });
+    setEditForm({ name: user.name, password: "", role: user.role });
     setEditOpen(true);
   }
 
@@ -130,7 +114,6 @@ export default function UtentiPage() {
     const payload: Record<string, unknown> = {
       name: editForm.name,
       role: editForm.role,
-      catId: editForm.catId || null,
     };
     if (editForm.password) payload.password = editForm.password;
     const res = await fetch(`/api/utenti/${editing.id}`, {
@@ -186,29 +169,11 @@ export default function UtentiPage() {
                   <SelectContent>
                     <SelectItem value="ADMIN">Admin</SelectItem>
                     <SelectItem value="OPERATORE">Operatore</SelectItem>
-                    <SelectItem value="MANUTENTORE">Manutentore</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
-              <div className="space-y-1">
-                <Label>CAT collegato (opzionale)</Label>
-                <Select
-                  value={form.catId || "none"}
-                  onValueChange={(v) => setForm((f) => ({ ...f, catId: v && v !== "none" ? v : "" }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Nessun CAT">
-                      {form.catId ? catList.find((c) => c.id === form.catId)?.ragioneSociale : undefined}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Nessun CAT</SelectItem>
-                    {catList.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.ragioneSociale}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-gray-400">Se collegato, l&apos;utente vedrà solo le pratiche di quel CAT.</p>
+                <p className="text-xs text-gray-400">
+                  L&apos;operatore vede solo le pratiche assegnate a lui.
+                </p>
               </div>
               <div className="flex gap-3 justify-end pt-2">
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>Annulla</Button>
@@ -245,29 +210,8 @@ export default function UtentiPage() {
                     <SelectContent>
                       <SelectItem value="ADMIN">Admin</SelectItem>
                       <SelectItem value="OPERATORE">Operatore</SelectItem>
-                      <SelectItem value="MANUTENTORE">Manutentore</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label>CAT collegato (opzionale)</Label>
-                  <Select
-                    value={editForm.catId || "none"}
-                    onValueChange={(v) => setEditForm((f) => ({ ...f, catId: v && v !== "none" ? v : "" }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Nessun CAT">
-                        {editForm.catId ? catList.find((c) => c.id === editForm.catId)?.ragioneSociale : undefined}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Nessun CAT</SelectItem>
-                      {catList.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>{c.ragioneSociale}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-gray-400">Se collegato, l&apos;utente vedrà solo le pratiche di quel CAT.</p>
                 </div>
                 <div className="flex gap-3 justify-end pt-2">
                   <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>Annulla</Button>
@@ -283,13 +227,12 @@ export default function UtentiPage() {
 
       <Card>
         <CardContent className="p-0 overflow-x-auto">
-          <table className="w-full min-w-[640px] text-sm">
+          <table className="w-full min-w-[560px] text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Nome</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Ruolo</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">CAT</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Stato</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Azioni</th>
               </tr>
@@ -303,9 +246,6 @@ export default function UtentiPage() {
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[u.role]}`}>
                       {ROLE_LABELS[u.role]}
                     </span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-600">
-                    {u.cat?.ragioneSociale ?? <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-4 py-3">
                     {u.active ? (

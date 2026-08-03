@@ -9,14 +9,19 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 const DEFAULT_MARCHE = [
-  "Extraflame",
-  "Edilkamin",
-  "MCZ",
-  "Palazzetti",
-  "Nordica",
-  "Laminox",
-  "Klover",
-  "Anselmo Cola",
+  // Antincendio
+  "ANAF",
+  "Gloria",
+  "Emme Antincendio",
+  "Kidde",
+  "Firex",
+  // Elettrico
+  "ABB",
+  "Schneider Electric",
+  "Bticino",
+  "Gewiss",
+  "Siemens",
+  "Legrand",
 ];
 
 async function main() {

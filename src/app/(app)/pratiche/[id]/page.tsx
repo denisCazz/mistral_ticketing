@@ -24,9 +24,10 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { StatoBadge } from "@/components/stato-badge";
-import { STATO_LABELS, STATI_CHIUSURA, statiTargetDisponibili, messaggioStatoNonModificabile, isCatOperatore } from "@/lib/constants";
+import { STATO_LABELS, STATI_CHIUSURA, statiTargetDisponibili, messaggioStatoNonModificabile } from "@/lib/constants";
+import { canAssignOperatore } from "@/lib/access";
 import { StatoPratica } from "@prisma/client";
-import { ArrowLeft, Phone, MapPin, Clock, Building2, Send, Pencil } from "lucide-react";
+import { ArrowLeft, Phone, MapPin, Clock, Send, Pencil, UserCog } from "lucide-react";
 import { useSession } from "next-auth/react";
 
 interface PraticaDetail {
@@ -50,8 +51,6 @@ interface PraticaDetail {
     email: string | null;
   };
   operatore: { id: string; name: string; email: string };
-  manutentore: { id: string; name: string; email: string } | null;
-  cat: { id: string; ragioneSociale: string; emails: string[]; telefono: string | null; referenti: string[] } | null;
   storia: {
     id: string;
     statoDa: StatoPratica | null;
@@ -70,21 +69,19 @@ export default function PraticaDetailPage() {
   const [newStato, setNewStato] = useState<StatoPratica | "">("");
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(false);
-  const [catList, setCatList] = useState<{ id: string; ragioneSociale: string }[]>([]);
-  const [savingCat, setSavingCat] = useState(false);
+  const [operatoriList, setOperatoriList] = useState<{ id: string; name: string; email: string }[]>([]);
+  const [savingOperatore, setSavingOperatore] = useState(false);
   const [sollecitoLoading, setSollecitoLoading] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
-  const [manutentori, setManutentori] = useState<{ id: string; name: string }[]>([]);
   const [editForm, setEditForm] = useState({
     tipoIntervento: "",
     descrizione: "",
     noteInterne: "",
-    manutentoreId: "",
   });
 
   useEffect(() => {
-    fetch(`/api/pratiche/${id}?includeCats=1`)
+    fetch(`/api/pratiche/${id}?includeOperatori=1`)
       .then(async (r) => {
         if (!r.ok) {
           const data = await r.json().catch(() => ({}));
@@ -102,9 +99,9 @@ export default function PraticaDetailPage() {
       })
       .then((d) => {
         if (!d) return;
-        const { catList: cats, ...praticaData } = d;
+        const { operatoriList: ops, ...praticaData } = d;
         setPratica(praticaData);
-        if (Array.isArray(cats)) setCatList(cats);
+        if (Array.isArray(ops)) setOperatoriList(ops);
       });
   }, [id, router]);
 
@@ -114,31 +111,17 @@ export default function PraticaDetailPage() {
       tipoIntervento: pratica.tipoIntervento ?? "",
       descrizione: pratica.descrizione ?? "",
       noteInterne: pratica.noteInterne ?? "",
-      manutentoreId: pratica.manutentore?.id ?? "",
     });
     setEditOpen(true);
-    if (manutentori.length === 0) {
-      fetch("/api/utenti")
-        .then((r) => (r.ok ? r.json() : []))
-        .then((users: { id: string; name: string; role: string; active: boolean }[]) => {
-          if (!Array.isArray(users)) return;
-          setManutentori(
-            users
-              .filter((u) => u.role === "MANUTENTORE" && u.active)
-              .map((u) => ({ id: u.id, name: u.name }))
-          );
-        })
-        .catch(() => {});
-    }
   }
 
   async function reloadPratica() {
-    const res = await fetch(`/api/pratiche/${id}?includeCats=1`);
+    const res = await fetch(`/api/pratiche/${id}?includeOperatori=1`);
     if (!res.ok) return null;
     const data = await res.json();
-    const { catList: cats, ...praticaData } = data;
+    const { operatoriList: ops, ...praticaData } = data;
     setPratica(praticaData);
-    if (Array.isArray(cats)) setCatList(cats);
+    if (Array.isArray(ops)) setOperatoriList(ops);
     return praticaData;
   }
 
@@ -151,7 +134,6 @@ export default function PraticaDetailPage() {
         tipoIntervento: editForm.tipoIntervento || null,
         descrizione: editForm.descrizione || null,
         noteInterne: editForm.noteInterne || null,
-        manutentoreId: editForm.manutentoreId || null,
       }),
     });
     setSavingEdit(false);
@@ -161,17 +143,18 @@ export default function PraticaDetailPage() {
     toast.success("Pratica aggiornata");
   }
 
-  async function assegnaCat(catId: string) {
-    setSavingCat(true);
+  async function assegnaOperatore(operatoreId: string) {
+    if (!operatoreId) return;
+    setSavingOperatore(true);
     const res = await fetch(`/api/pratiche/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ catId: catId || null }),
+      body: JSON.stringify({ operatoreId }),
     });
-    setSavingCat(false);
-    if (!res.ok) { toast.error("Errore assegnazione CAT"); return; }
+    setSavingOperatore(false);
+    if (!res.ok) { toast.error("Errore assegnazione operatore"); return; }
     await reloadPratica();
-    toast.success(catId ? "CAT assegnato" : "CAT rimosso");
+    toast.success("Operatore assegnato");
   }
 
   async function inviaSollecito() {
@@ -203,13 +186,17 @@ export default function PraticaDetailPage() {
     toast.success(isClosed ? "Pratica riaperta" : "Stato aggiornato");
   }
 
-  const catOptions = useMemo(() => {
-    const map = new Map(catList.map((c) => [c.id, c]));
-    if (pratica?.cat && !map.has(pratica.cat.id)) {
-      map.set(pratica.cat.id, { id: pratica.cat.id, ragioneSociale: pratica.cat.ragioneSociale });
+  const operatoriOptions = useMemo(() => {
+    const map = new Map(operatoriList.map((o) => [o.id, o]));
+    if (pratica?.operatore && !map.has(pratica.operatore.id)) {
+      map.set(pratica.operatore.id, {
+        id: pratica.operatore.id,
+        name: pratica.operatore.name,
+        email: pratica.operatore.email,
+      });
     }
-    return [...map.values()].sort((a, b) => a.ragioneSociale.localeCompare(b.ragioneSociale, "it"));
-  }, [catList, pratica?.cat]);
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "it"));
+  }, [operatoriList, pratica?.operatore]);
 
   if (!pratica) {
     return (
@@ -219,24 +206,14 @@ export default function PraticaDetailPage() {
     );
   }
 
-  const selectedCatLabel = pratica.cat?.ragioneSociale
-    ?? catOptions.find((c) => c.id === pratica.cat?.id)?.ragioneSociale;
-
   const isClosed = STATI_CHIUSURA.includes(pratica.stato);
-  const isCatUser = isCatOperatore(session?.user?.role, session?.user?.catId);
-  const canEdit = session?.user?.role !== "MANUTENTORE" || Boolean(session?.user?.catId);
-  const canManageCat = canEdit && !isCatUser;
+  const canAssign = canAssignOperatore(session);
   const isAdmin = session?.user?.role === "ADMIN";
   const statiDisponibili = statiTargetDisponibili(
     session?.user?.role,
-    session?.user?.catId,
     pratica.stato
   );
-  const messaggioStato = messaggioStatoNonModificabile(
-    session?.user?.role,
-    session?.user?.catId,
-    pratica.stato
-  );
+  const messaggioStato = messaggioStatoNonModificabile(session?.user?.role);
   const puoAggiornareStato = statiDisponibili.length > 0;
 
   return (
@@ -283,7 +260,7 @@ export default function PraticaDetailPage() {
                   <p className="text-sm text-gray-900 mt-1 whitespace-pre-wrap">{pratica.descrizione}</p>
                 </div>
               )}
-              {pratica.noteInterne && session?.user?.role !== "MANUTENTORE" && (
+              {pratica.noteInterne && (
                 <div className="bg-yellow-50 rounded-lg p-3">
                   <p className="text-xs font-medium text-yellow-700 uppercase tracking-wide">Note interne</p>
                   <p className="text-sm text-yellow-900 mt-1">{pratica.noteInterne}</p>
@@ -343,7 +320,7 @@ export default function PraticaDetailPage() {
             </Card>
           )}
 
-          {isCatUser && messaggioStato && !puoAggiornareStato && (
+          {messaggioStato && !puoAggiornareStato && (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Aggiorna stato</CardTitle>
@@ -395,13 +372,9 @@ export default function PraticaDetailPage() {
               <CardTitle className="text-base">Cliente</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {canEdit ? (
-                <Link href={`/clienti/${pratica.cliente.id}`} className="text-sm font-medium text-orange-600 hover:underline block">
-                  {pratica.cliente.ragioneSociale}
-                </Link>
-              ) : (
-                <p className="text-sm font-medium text-gray-900">{pratica.cliente.ragioneSociale}</p>
-              )}
+              <Link href={`/clienti/${pratica.cliente.id}`} className="text-sm font-medium text-orange-600 hover:underline block">
+                {pratica.cliente.ragioneSociale}
+              </Link>
               {pratica.cliente.indirizzo && (
                 <div className="flex items-start gap-1.5 text-xs text-gray-600">
                   <MapPin className="h-3.5 w-3.5 mt-0.5 shrink-0" />
@@ -420,77 +393,48 @@ export default function PraticaDetailPage() {
           {/* Assegnazione */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Assegnazione</CardTitle>
+              <CardTitle className="text-base flex items-center gap-2">
+                <UserCog className="h-4 w-4" /> Assegnazione
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div>
                 <p className="text-xs text-gray-500 mb-1">Operatore</p>
-                <p className="font-medium text-gray-900">{pratica.operatore.name}</p>
+                {canAssign ? (
+                  <Select
+                    value={pratica.operatore.id}
+                    onValueChange={(v) => v && assegnaOperatore(String(v))}
+                  >
+                    <SelectTrigger disabled={savingOperatore}>
+                      <SelectValue>
+                        {pratica.operatore.name}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {operatoriOptions.map((o) => (
+                        <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <p className="font-medium text-gray-900">{pratica.operatore.name}</p>
+                )}
+                {pratica.operatore.email && (
+                  <p className="text-xs text-gray-500 mt-1">{pratica.operatore.email}</p>
+                )}
+                {isAdmin && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full mt-2"
+                    onClick={inviaSollecito}
+                    disabled={sollecitoLoading}
+                  >
+                    <Send className="h-3.5 w-3.5 mr-2" />
+                    {sollecitoLoading ? "Invio..." : "Invia sollecito"}
+                  </Button>
+                )}
               </div>
-              <div>
-                <p className="text-xs text-gray-500 mb-1">Manutentore</p>
-                <p className="font-medium text-gray-900">
-                  {pratica.manutentore?.name ?? "Non assegnato"}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* CAT */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Building2 className="h-4 w-4" /> Centro Assistenza
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              {canManageCat && (
-                <Select
-                  value={pratica.cat?.id ?? "none"}
-                  onValueChange={(v) => assegnaCat(!v || v === "none" ? "" : String(v))}
-                >
-                  <SelectTrigger disabled={savingCat}>
-                    <SelectValue placeholder="Assegna un CAT...">
-                      {selectedCatLabel}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Nessun CAT</SelectItem>
-                    {catOptions.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.ragioneSociale}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-
-              {pratica.cat ? (
-                <div className="space-y-1">
-                  <p className="font-medium text-gray-900">{pratica.cat.ragioneSociale}</p>
-                  {pratica.cat.referenti?.length ? (
-                    <p className="text-xs text-gray-500">{pratica.cat.referenti.join(" · ")}</p>
-                  ) : null}
-                  {pratica.cat.emails.map((email) => (
-                    <p key={email} className="text-xs text-gray-500">{email}</p>
-                  ))}
-                  {pratica.cat.telefono && (
-                    <p className="text-xs text-gray-500">{pratica.cat.telefono}</p>
-                  )}
-                  {canManageCat && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full mt-2"
-                      onClick={inviaSollecito}
-                      disabled={sollecitoLoading}
-                    >
-                      <Send className="h-3.5 w-3.5 mr-2" />
-                      {sollecitoLoading ? "Invio..." : "Invia sollecito"}
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                <p className="text-xs text-gray-400">Nessun CAT assegnato</p>
-              )}
             </CardContent>
           </Card>
         </div>
@@ -519,28 +463,6 @@ export default function PraticaDetailPage() {
                   value={editForm.descrizione}
                   onChange={(e) => setEditForm((f) => ({ ...f, descrizione: e.target.value }))}
                 />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="edit-manutentore">Manutentore</Label>
-                <Select
-                  value={editForm.manutentoreId || "none"}
-                  onValueChange={(v) => setEditForm((f) => ({ ...f, manutentoreId: v === "none" ? "" : String(v) }))}
-                >
-                  <SelectTrigger id="edit-manutentore">
-                    <SelectValue placeholder="Nessun manutentore">
-                      {editForm.manutentoreId
-                        ? manutentori.find((m) => m.id === editForm.manutentoreId)?.name
-                          ?? pratica.manutentore?.name
-                        : undefined}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Nessun manutentore</SelectItem>
-                    {manutentori.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
               <div className="space-y-1">
                 <Label htmlFor="edit-note">Note interne</Label>

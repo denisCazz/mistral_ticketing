@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { canAccessPratica, canSetStato } from "@/lib/access";
+import { canAccessPratica, canAssignOperatore, canSetStato } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
 import { STATO_LABELS } from "@/lib/constants";
@@ -13,8 +13,7 @@ import {
 const schema = z.object({
   stato: z.nativeEnum(StatoPratica),
   note: z.string().optional(),
-  manutentoreId: z.string().optional().nullable(),
-  catId: z.string().optional().nullable(),
+  operatoreId: z.string().optional().nullable(),
 });
 
 export async function POST(
@@ -23,10 +22,6 @@ export async function POST(
 ) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  // Manutentore senza CAT: sola lettura. Con CAT collegato: può aggiornare gli stati.
-  if (session.user?.role === "MANUTENTORE" && !session.user?.catId) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   const { id } = await params;
   const body = await req.json();
@@ -35,10 +30,8 @@ export async function POST(
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { stato, note, manutentoreId, catId } = parsed.data;
+  const { stato, note, operatoreId } = parsed.data;
 
-  // Verifica che il ruolo possa impostare questo specifico stato
-  // partendo dallo stato attuale della pratica.
   const pratica = await prisma.pratica.findUnique({
     where: { id },
     include: praticaIncludeForNotify,
@@ -46,13 +39,7 @@ export async function POST(
   if (!pratica) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (!canAccessPratica(session, pratica)) {
     return NextResponse.json(
-      {
-        error: session.user?.catId
-          ? "Non hai accesso a questa pratica"
-          : session.user?.role === "MANUTENTORE"
-            ? "Sessione scaduta o profilo non collegato al CAT — effettua logout e login"
-            : "Non hai accesso a questa pratica",
-      },
+      { error: "Non hai accesso a questa pratica" },
       { status: 403 }
     );
   }
@@ -61,23 +48,35 @@ export async function POST(
     return NextResponse.json(
       {
         error:
-          pratica.stato === "RICEVUTA" && session.user?.catId
-            ? "In attesa di presa in carico da Mistral Impianti"
-            : stato === pratica.stato
-              ? "Seleziona uno stato diverso da quello attuale"
-              : `Non puoi impostare «${STATO_LABELS[stato]}» partendo da «${STATO_LABELS[pratica.stato]}»`,
+          stato === pratica.stato
+            ? "Seleziona uno stato diverso da quello attuale"
+            : `Non puoi impostare «${STATO_LABELS[stato]}» partendo da «${STATO_LABELS[pratica.stato]}»`,
       },
       { status: 403 }
     );
   }
 
   const updateData: Record<string, unknown> = { stato };
-  if (manutentoreId !== undefined) updateData.manutentoreId = manutentoreId || null;
-  if (catId !== undefined) {
-    if (session.user?.catId) {
+
+  if (operatoreId !== undefined) {
+    if (!canAssignOperatore(session)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    updateData.catId = catId || null;
+    if (!operatoreId) {
+      return NextResponse.json({ error: "Operatore obbligatorio" }, { status: 400 });
+    }
+    const target = await prisma.user.findFirst({
+      where: {
+        id: operatoreId,
+        active: true,
+        role: { in: ["ADMIN", "OPERATORE"] },
+      },
+      select: { id: true },
+    });
+    if (!target) {
+      return NextResponse.json({ error: "Operatore non valido" }, { status: 400 });
+    }
+    updateData.operatoreId = target.id;
   }
 
   const [updated] = await prisma.$transaction([

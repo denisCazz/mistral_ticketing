@@ -11,12 +11,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import SignaturePad from "@/components/SignaturePad";
 import {
-  CONTROLLO_GARANZIA_FIELDS,
+  getControlloFields,
+  SETTORE_VALUES,
+  SETTORE_LABELS,
   SI_NO_NC_VALUES,
-  TIPOLOGIA_INSTALLAZIONE_VALUES,
-  TIPOLOGIA_INSTALLAZIONE_LABELS,
+  TIPO_IMPIANTO_BY_SETTORE,
+  TIPO_IMPIANTO_LABELS,
   TIPOLOGIA_INTERVENTO_VALUES,
   TIPOLOGIA_INTERVENTO_LABELS,
+  UBICAZIONE_BY_SETTORE,
+  UBICAZIONE_LABELS,
+  type ControlloKey,
+  type Settore,
   type SiNoNc,
 } from "@/lib/rapportino-constants";
 import { cn } from "@/lib/utils";
@@ -35,6 +41,34 @@ interface MarcaOption {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+type FormState = {
+  clienteId: string;
+  praticaId: string;
+  dataIntervento: string;
+  oraIntervento: string;
+  tipologiaIntervento: string;
+  settore: Settore;
+  tipoImpianto: string;
+  marca: string;
+  modello: string;
+  numeroSerie: string;
+  tipoIntervento: string;
+  motivoChiamata: string;
+  descrizione: string;
+  spiegataManutenzione: SiNoNc | "";
+  accessibilita: SiNoNc | "";
+  integritaComponente: SiNoNc | "";
+  conformitaNormativa: SiNoNc | "";
+  esitoFunzionamento: SiNoNc | "";
+  presaVisioneCondizioniGaranzia: boolean;
+  ubicazione: string;
+  materialiUtilizzati: string;
+  note: string;
+  firmaOperatore: string;
+  firmaCliente: string;
+  firmaClientePrivacy: string;
+};
+
 export default function NuovoRapportinoForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -45,26 +79,27 @@ export default function NuovoRapportinoForm() {
   const [clienteSearch, setClienteSearch] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<FormState>({
     clienteId: "",
     praticaId: praticaId || "",
     dataIntervento: today(),
     oraIntervento: "",
-    tipologiaIntervento: "manutenzione_annuale",
-    tipoStufa: "pellet" as "pellet" | "legno",
+    tipologiaIntervento: "manutenzione_periodica",
+    settore: "antincendio",
+    tipoImpianto: "estintore",
     marca: "",
     modello: "",
     numeroSerie: "",
     tipoIntervento: "Manutenzione",
     motivoChiamata: "",
     descrizione: "",
-    spiegataManutenzione: "" as SiNoNc | "",
-    impiantoElettrico: "" as SiNoNc | "",
-    condottoFumi: "" as SiNoNc | "",
-    installazioneUni10683: "" as SiNoNc | "",
-    controlloParametri: "" as SiNoNc | "",
+    spiegataManutenzione: "",
+    accessibilita: "",
+    integritaComponente: "",
+    conformitaNormativa: "",
+    esitoFunzionamento: "",
     presaVisioneCondizioniGaranzia: false,
-    tipologiaInstallazione: "",
+    ubicazione: "",
     materialiUtilizzati: "",
     note: "",
     firmaOperatore: "",
@@ -96,8 +131,21 @@ export default function NuovoRapportinoForm() {
     return marca?.modelli || [];
   }, [marche, form.marca]);
 
-  function setField<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
+  const tipiImpianto = TIPO_IMPIANTO_BY_SETTORE[form.settore];
+  const ubicazioni = UBICAZIONE_BY_SETTORE[form.settore];
+  const controlli = getControlloFields(form.settore);
+
+  function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function onSettoreChange(settore: Settore) {
+    setForm((prev) => ({
+      ...prev,
+      settore,
+      tipoImpianto: TIPO_IMPIANTO_BY_SETTORE[settore][0],
+      ubicazione: "",
+    }));
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -120,11 +168,11 @@ export default function NuovoRapportinoForm() {
           ...form,
           praticaId: form.praticaId || null,
           spiegataManutenzione: form.spiegataManutenzione || null,
-          impiantoElettrico: form.impiantoElettrico || null,
-          condottoFumi: form.condottoFumi || null,
-          installazioneUni10683: form.installazioneUni10683 || null,
-          controlloParametri: form.controlloParametri || null,
-          tipologiaInstallazione: form.tipologiaInstallazione || null,
+          accessibilita: form.accessibilita || null,
+          integritaComponente: form.integritaComponente || null,
+          conformitaNormativa: form.conformitaNormativa || null,
+          esitoFunzionamento: form.esitoFunzionamento || null,
+          ubicazione: form.ubicazione || null,
         }),
       });
       const json = await res.json();
@@ -146,7 +194,9 @@ export default function NuovoRapportinoForm() {
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Nuovo rapportino</h1>
-          <p className="text-sm text-gray-500 mt-1">Scheda intervento sul campo</p>
+          <p className="text-sm text-gray-500 mt-1">
+            Scheda intervento antincendio / elettrico
+          </p>
         </div>
         <Link href="/rapportini" className={cn(buttonVariants({ variant: "outline" }))}>
           Annulla
@@ -205,19 +255,36 @@ export default function NuovoRapportinoForm() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Apparecchio e intervento</CardTitle>
+            <CardTitle className="text-base">Impianto e intervento</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Tipo stufa</Label>
+                <Label>Settore</Label>
                 <select
                   className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                  value={form.tipoStufa}
-                  onChange={(e) => setField("tipoStufa", e.target.value as "pellet" | "legno")}
+                  value={form.settore}
+                  onChange={(e) => onSettoreChange(e.target.value as Settore)}
                 >
-                  <option value="pellet">Pellet</option>
-                  <option value="legno">Legno</option>
+                  {SETTORE_VALUES.map((v) => (
+                    <option key={v} value={v}>
+                      {SETTORE_LABELS[v]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Tipo impianto / apparecchio</Label>
+                <select
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  value={form.tipoImpianto}
+                  onChange={(e) => setField("tipoImpianto", e.target.value)}
+                >
+                  {tipiImpianto.map((v) => (
+                    <option key={v} value={v}>
+                      {TIPO_IMPIANTO_LABELS[v] || v}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="space-y-2">
@@ -233,6 +300,14 @@ export default function NuovoRapportinoForm() {
                     </option>
                   ))}
                 </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Tipo intervento</Label>
+                <Input
+                  value={form.tipoIntervento}
+                  onChange={(e) => setField("tipoIntervento", e.target.value)}
+                  required
+                />
               </div>
               <div className="space-y-2">
                 <Label>Marca</Label>
@@ -266,19 +341,26 @@ export default function NuovoRapportinoForm() {
                 </datalist>
               </div>
               <div className="space-y-2">
-                <Label>N° serie</Label>
+                <Label>N° serie / matricola</Label>
                 <Input
                   value={form.numeroSerie}
                   onChange={(e) => setField("numeroSerie", e.target.value)}
                 />
               </div>
               <div className="space-y-2">
-                <Label>Tipo intervento</Label>
-                <Input
-                  value={form.tipoIntervento}
-                  onChange={(e) => setField("tipoIntervento", e.target.value)}
-                  required
-                />
+                <Label>Ubicazione</Label>
+                <select
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  value={form.ubicazione}
+                  onChange={(e) => setField("ubicazione", e.target.value)}
+                >
+                  <option value="">—</option>
+                  {ubicazioni.map((v) => (
+                    <option key={v} value={v}>
+                      {UBICAZIONE_LABELS[v] || v}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             <div className="space-y-2">
@@ -318,16 +400,18 @@ export default function NuovoRapportinoForm() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Controlli garanzia</CardTitle>
+            <CardTitle className="text-base">Controlli conformità</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {CONTROLLO_GARANZIA_FIELDS.map((field) => (
+            {controlli.map((field) => (
               <div key={field.key} className="space-y-2">
                 <Label>{field.label}</Label>
                 <select
                   className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                  value={form[field.key]}
-                  onChange={(e) => setField(field.key, e.target.value as SiNoNc | "")}
+                  value={form[field.key as ControlloKey]}
+                  onChange={(e) =>
+                    setField(field.key as ControlloKey, e.target.value as SiNoNc | "")
+                  }
                 >
                   <option value="">—</option>
                   {SI_NO_NC_VALUES.map((v) => (
@@ -338,28 +422,13 @@ export default function NuovoRapportinoForm() {
                 </select>
               </div>
             ))}
-            <div className="space-y-2">
-              <Label>Tipologia installazione</Label>
-              <select
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                value={form.tipologiaInstallazione}
-                onChange={(e) => setField("tipologiaInstallazione", e.target.value)}
-              >
-                <option value="">—</option>
-                {TIPOLOGIA_INSTALLAZIONE_VALUES.map((v) => (
-                  <option key={v} value={v}>
-                    {TIPOLOGIA_INSTALLAZIONE_LABELS[v]}
-                  </option>
-                ))}
-              </select>
-            </div>
             <label className="flex items-center gap-2 text-sm text-gray-700">
               <input
                 type="checkbox"
                 checked={form.presaVisioneCondizioniGaranzia}
                 onChange={(e) => setField("presaVisioneCondizioniGaranzia", e.target.checked)}
               />
-              Presa visione condizioni di garanzia
+              Presa visione condizioni di garanzia / responsabilità
             </label>
           </CardContent>
         </Card>
