@@ -1,0 +1,84 @@
+import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { isCatUser } from "@/lib/access";
+import { prisma } from "@/lib/db";
+import { z } from "zod";
+
+const updateSchema = z.object({
+  ragioneSociale: z.string().min(1).optional(),
+  cellulare: z.string().optional().nullable(),
+  telFisso: z.string().optional().nullable(),
+  email: z.string().email().optional().nullable().or(z.literal("")),
+  citta: z.string().optional().nullable(),
+  provincia: z.string().optional().nullable(),
+  indirizzo: z.string().optional().nullable(),
+  cap: z.string().optional().nullable(),
+  note1: z.string().optional().nullable(),
+  note2: z.string().optional().nullable(),
+  note3: z.string().optional().nullable(),
+});
+
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (session.user?.role === "MANUTENTORE") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { id } = await params;
+
+  const cliente = await prisma.cliente.findUnique({
+    where: { id },
+    include: {
+      pratiche: {
+        orderBy: { createdAt: "desc" },
+        include: {
+          operatore: { select: { id: true, name: true } },
+          cat: { select: { id: true, ragioneSociale: true } },
+        },
+      },
+    },
+  });
+
+  if (!cliente) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  if (isCatUser(session)) {
+    const catId = session.user!.catId!;
+    return NextResponse.json({
+      ...cliente,
+      pratiche: cliente.pratiche.filter((p) => p.catId === catId),
+    });
+  }
+
+  return NextResponse.json(cliente);
+}
+
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (session.user?.role === "MANUTENTORE") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { id } = await params;
+  const body = await req.json();
+  const parsed = updateSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const { email, ...rest } = parsed.data;
+  const data = {
+    ...rest,
+    ...(email !== undefined ? { email: email || null } : {}),
+  };
+
+  const cliente = await prisma.cliente.update({ where: { id }, data });
+  return NextResponse.json(cliente);
+}

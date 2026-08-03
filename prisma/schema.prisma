@@ -1,0 +1,255 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  OPERATORE
+  MANUTENTORE
+}
+
+enum StatoPratica {
+  RICEVUTA
+  PRESA_IN_CARICO
+  PRESA_IN_CARICO_MANUTENTORE
+  IN_ATTESA_RICAMBI
+  COMPLETATA
+  ANNULLATA
+  NON_RISOLVIBILE
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(OPERATORE)
+  active       Boolean  @default(true)
+  catId        String?
+  firma        String?
+  qualifica    String?
+  telefono     String?
+  createdAt    DateTime @default(now())
+
+  cat                     Cat?            @relation(fields: [catId], references: [id])
+  praticheComeOperatore   Pratica[]       @relation("OperatoreRelation")
+  praticheComeManutentore Pratica[]       @relation("ManutentoreRelation")
+  cambiamentiStato        PraticaStoria[]
+  rapportini              Rapportino[]
+
+  @@index([catId])
+}
+
+model Cliente {
+  id              String   @id @default(cuid())
+  ragioneSociale  String
+  nome            String?
+  cognome         String?
+  indirizzo       String?
+  numeroCivico    String?
+  cap             String?
+  citta           String?
+  provincia       String?
+  telFisso        String?
+  cellulare       String?
+  email           String?
+  partitaIva      String?
+  codiceFiscale   String?
+  note1           String?
+  note2           String?
+  note3           String?
+  statoAnagrafica String?
+  motivoControllo String?
+  sourceId        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  pratiche   Pratica[]
+  rapportini Rapportino[]
+
+  @@index([ragioneSociale])
+  @@index([cellulare])
+  @@index([email])
+  @@index([cognome])
+}
+
+model Cat {
+  id             String   @id @default(cuid())
+  ragioneSociale String
+  referenti      String[] @default([])
+  emails         String[] @default([])
+  telefono       String?
+  indirizzo      String?
+  cap            String?
+  citta          String?
+  provincia      String?
+  note           String?
+  active         Boolean  @default(true)
+  sourceId       String?
+  createdAt      DateTime @default(now())
+
+  pratiche Pratica[]
+  utenti   User[]
+
+  @@index([ragioneSociale])
+}
+
+model Pratica {
+  id             String       @id @default(cuid())
+  numeroPratica  String       @unique
+  clienteId      String
+  tipoIntervento String?
+  descrizione    String?
+  stato          StatoPratica @default(RICEVUTA)
+  operatoreId    String
+  manutentoreId  String?
+  catId          String?
+  noteInterne    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  cliente     Cliente         @relation(fields: [clienteId], references: [id])
+  operatore   User            @relation("OperatoreRelation", fields: [operatoreId], references: [id])
+  manutentore User?           @relation("ManutentoreRelation", fields: [manutentoreId], references: [id])
+  cat         Cat?            @relation(fields: [catId], references: [id])
+  storia      PraticaStoria[]
+  rapportini  Rapportino[]
+
+  @@index([stato])
+  @@index([clienteId])
+  @@index([operatoreId])
+  @@index([manutentoreId])
+  @@index([catId])
+}
+
+model PraticaStoria {
+  id          String        @id @default(cuid())
+  praticaId   String
+  statoDa     StatoPratica?
+  statoA      StatoPratica
+  changedById String
+  changedAt   DateTime      @default(now())
+  note        String?
+
+  pratica   Pratica @relation(fields: [praticaId], references: [id], onDelete: Cascade)
+  changedBy User    @relation(fields: [changedById], references: [id])
+
+  @@index([praticaId])
+}
+
+model XlsxDuplicato {
+  id         String   @id @default(cuid())
+  gruppoId   String
+  recordJson Json
+  scelto     Boolean  @default(false)
+  risolto    Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([gruppoId])
+  @@index([risolto])
+}
+
+/// Rapportino di intervento (dal modulo Bitora/rapportini)
+model Rapportino {
+  id                            String    @id @default(cuid())
+  utenteId                      String
+  clienteId                     String
+  praticaId                     String?
+  dataRichiesta                 DateTime? @db.Date
+  dataIntervento                DateTime  @db.Date
+  oraIntervento                 String?
+  tipologiaIntervento           String?
+  tipoStufa                     String
+  marca                         String
+  modello                       String
+  numeroSerie                   String?
+  dataAcquisto                  DateTime? @db.Date
+  rivenditore                   String?
+  tipoIntervento                String
+  motivoChiamata                String?
+  codiceErrore                  String?
+  verifiche                     String?
+  installazioneEseguitaDa       String?
+  descrizione                   String
+  spiegataManutenzione          String?
+  impiantoElettrico             String?
+  condottoFumi                  String?
+  installazioneUni10683         String?
+  controlloParametri            String?
+  presaVisioneCondizioniGaranzia Boolean? @default(false)
+  tipologiaInstallazione        String?
+  noteInstallazione             String?
+  prossimoIntervento            DateTime? @db.Date
+  materialiUtilizzati           String?
+  note                          String?
+  firmaClientePrivacy           String?
+  firmaOperatore                String?
+  firmaCliente                  String?
+  createdAt                     DateTime  @default(now())
+  updatedAt                     DateTime  @updatedAt
+
+  utente   User                   @relation(fields: [utenteId], references: [id], onDelete: Restrict)
+  cliente  Cliente                @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  pratica  Pratica?               @relation(fields: [praticaId], references: [id], onDelete: SetNull)
+  immagini RapportinoImmagine[]
+
+  @@index([clienteId])
+  @@index([utenteId])
+  @@index([praticaId])
+  @@index([dataIntervento])
+  @@index([tipoStufa])
+}
+
+model RapportinoImmagine {
+  id           String    @id @default(cuid())
+  rapportinoId String
+  storageKey   String
+  mimeType     String
+  sizeBytes    Int?
+  caption      String?
+  createdAt    DateTime  @default(now())
+
+  rapportino Rapportino @relation(fields: [rapportinoId], references: [id], onDelete: Cascade)
+
+  @@index([rapportinoId])
+}
+
+model Marca {
+  id        String   @id @default(cuid())
+  nome      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  modelli Modello[]
+}
+
+model Modello {
+  id        String   @id @default(cuid())
+  marcaId   String
+  nome      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  marca Marca @relation(fields: [marcaId], references: [id], onDelete: Cascade)
+
+  @@unique([marcaId, nome])
+  @@index([marcaId])
+}
+
+model AziendaSettings {
+  id                   String   @id @default("default")
+  nomeAzienda          String   @default("Mistral Impianti")
+  logo                 String?
+  indirizzo            String?
+  partitaIva           String?
+  codiceFiscale        String?
+  pec                  String?
+  codiceDestinatarioSdi String?
+  telefono             String?
+  email                String?
+  updatedAt            DateTime @updatedAt
+}
