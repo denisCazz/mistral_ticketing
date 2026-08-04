@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { isAiWhitelistCandidate } from "@/lib/document-whitelist";
 import { headR2Object, isR2Configured } from "@/lib/r2";
 import type { EntityType, StatoValidita } from "@prisma/client";
+import { parseScadenzaFromText } from "@/lib/scadenza-parser";
 
 function hrWhere(canHr: boolean): Record<string, unknown> {
   if (canHr) return {};
@@ -41,6 +42,7 @@ export async function GET(req: Request) {
   const statoValidita = searchParams.get("statoValidita");
   const scadenza = searchParams.get("scadenza");
   const search = searchParams.get("search");
+  const suggest = searchParams.get("suggest") === "1";
   const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1);
   const limit = Math.min(
     100,
@@ -78,7 +80,10 @@ export async function GET(req: Request) {
   if (automezzoId) and.push({ automezzoId });
   if (statoValidita) and.push({ statoValidita });
   if (scadenza === "presenti") and.push({ dataScadenza: { not: null } });
-  if (scadenza === "mancanti") and.push({ dataScadenza: null });
+  if (scadenza === "mancanti" || scadenza === "da-classificare") {
+    and.push({ dataScadenza: null, nonServeScadenza: false });
+  }
+  if (scadenza === "non-serve") and.push({ nonServeScadenza: true });
   if (search) {
     and.push({
       OR: [
@@ -105,8 +110,25 @@ export async function GET(req: Request) {
     prisma.documento.count({ where }),
   ]);
 
+  const payload = suggest
+    ? documenti.map((doc) => {
+        const folderHint = [doc.categoria, doc.sottocategoria]
+          .filter(Boolean)
+          .join("/");
+        const parsed = parseScadenzaFromText(doc.titoloOriginale, folderHint);
+        return {
+          ...doc,
+          suggestedScadenza: parsed.dataScadenza
+            ? parsed.dataScadenza.toISOString().slice(0, 10)
+            : null,
+          suggestedConfidence: parsed.confidence,
+          suggestedRaw: parsed.rawValue,
+        };
+      })
+    : documenti;
+
   return NextResponse.json({
-    documenti,
+    documenti: payload,
     total,
     page,
     totalPages: Math.ceil(total / limit) || 1,

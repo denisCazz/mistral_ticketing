@@ -19,7 +19,6 @@ import {
   ChevronRight,
   IdCard,
   Pencil,
-  Plus,
   Settings2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -105,8 +104,6 @@ export default function DipendentiPage() {
     costoFestivo: "0",
   });
 
-  const [nuovoOpen, setNuovoOpen] = useState(false);
-  const [nuovoForm, setNuovoForm] = useState({ nome: "", cognome: "" });
   const [saving, setSaving] = useState(false);
   const [massivaOpen, setMassivaOpen] = useState(false);
   const [massivaDipendenti, setMassivaDipendenti] = useState<string[]>([]);
@@ -152,6 +149,7 @@ export default function DipendentiPage() {
   );
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchMese(mese);
   }, [mese, fetchMese]);
 
@@ -264,33 +262,6 @@ export default function DipendentiPage() {
     setEditing(null);
   }
 
-  async function createDipendente(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    const res = await fetch("/api/dipendenti", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(nuovoForm),
-    });
-    setSaving(false);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      toast.error(err.error ?? "Errore creazione dipendente");
-      return;
-    }
-    const data = await res.json();
-    if (data.credenziali) {
-      toast.success(
-        `Creato. Login: ${data.credenziali.utente} / ${data.credenziali.password}`
-      );
-    } else {
-      toast.success("Dipendente creato");
-    }
-    setNuovoOpen(false);
-    setNuovoForm({ nome: "", cognome: "" });
-    fetchMese(mese);
-  }
-
   function openMassiva() {
     setMassivaDipendenti([]);
     setMassivaDate([]);
@@ -350,7 +321,7 @@ export default function DipendentiPage() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <IdCard className="h-6 w-6" /> Dipendenti
+            <IdCard className="h-6 w-6" /> Calendario dipendenti
           </h1>
           <p className="text-sm text-gray-500 mt-1">
             Feriali precompilati in sede · tariffe personalizzabili · utenza
@@ -391,9 +362,9 @@ export default function DipendentiPage() {
           </Button>
           <Button
             className="bg-orange-500 hover:bg-orange-600"
-            onClick={() => setNuovoOpen(true)}
+            onClick={() => window.location.assign("/dipendenti/anagrafica")}
           >
-            <Plus className="h-4 w-4 mr-2" /> Nuovo dipendente
+            <IdCard className="h-4 w-4 mr-2" /> Gestisci dipendenti
           </Button>
         </div>
       </div>
@@ -823,61 +794,6 @@ export default function DipendentiPage() {
                 className="bg-orange-500 hover:bg-orange-600"
               >
                 {massivaSaving ? "Aggiornamento..." : "Applica pianificazione"}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Nuovo dipendente */}
-      <Dialog open={nuovoOpen} onOpenChange={setNuovoOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Nuovo dipendente</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={createDipendente} className="space-y-4">
-            <p className="text-sm text-gray-500">
-              Verrà creata l&apos;utenza{" "}
-              <span className="font-medium text-gray-700">nome.cognome</span> con
-              password <span className="font-medium text-gray-700">Mistral1234</span>
-              , costi standard e feriali del mese in sede.
-            </p>
-            <div className="space-y-1.5">
-              <Label htmlFor="cognome">Cognome</Label>
-              <Input
-                id="cognome"
-                required
-                value={nuovoForm.cognome}
-                onChange={(e) =>
-                  setNuovoForm((f) => ({ ...f, cognome: e.target.value }))
-                }
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="nome">Nome</Label>
-              <Input
-                id="nome"
-                required
-                value={nuovoForm.nome}
-                onChange={(e) =>
-                  setNuovoForm((f) => ({ ...f, nome: e.target.value }))
-                }
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setNuovoOpen(false)}
-              >
-                Annulla
-              </Button>
-              <Button
-                type="submit"
-                disabled={saving}
-                className="bg-orange-500 hover:bg-orange-600"
-              >
-                {saving ? "Salvataggio..." : "Crea"}
               </Button>
             </div>
           </form>

@@ -1,22 +1,41 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   AlertCircle,
   CalendarCheck,
   CalendarClock,
   Check,
   CheckCircle2,
-  ChevronRight,
   Clock3,
   FileText,
   Loader2,
   RefreshCw,
+  Search,
   ShieldCheck,
+  Sparkles,
   UserRound,
+  Ban,
 } from "lucide-react";
 import { toast } from "sonner";
+
+interface DocumentoRow {
+  id: string;
+  titoloOriginale: string;
+  categoria: string;
+  sottocategoria: string | null;
+  dataScadenza: string | null;
+  nonServeScadenza: boolean;
+  statoValidita: string;
+  suggestedScadenza?: string | null;
+  suggestedConfidence?: number;
+  suggestedRaw?: string | null;
+  dipendente?: { id: string; nome: string; cognome: string } | null;
+  automezzo?: { id: string; targa: string } | null;
+}
 
 interface ScadenzaRow {
   id: string;
@@ -24,16 +43,17 @@ interface ScadenzaRow {
   dataScadenza: string;
   giorniRimanenti: number;
   confermata: boolean;
-  documento?: { titoloOriginale: string } | null;
+  documento?: { id: string; titoloOriginale: string } | null;
   responsabile?: { name: string } | null;
 }
 
-type Filtro = "tutte" | "da-confermare" | "confermate";
+type Tab = "da-classificare" | "prossime" | "con-scadenza" | "non-serve";
 
-const filtri: { value: Filtro; label: string }[] = [
-  { value: "tutte", label: "Tutte" },
-  { value: "da-confermare", label: "Da confermare" },
-  { value: "confermate", label: "Confermate" },
+const tabs: { value: Tab; label: string }[] = [
+  { value: "da-classificare", label: "Da classificare" },
+  { value: "prossime", label: "Prossime" },
+  { value: "con-scadenza", label: "Con scadenza" },
+  { value: "non-serve", label: "Non serve" },
 ];
 
 function formatoData(data: string) {
@@ -49,96 +69,237 @@ function informazioniUrgenza(giorni: number) {
     return {
       label: giorni === 0 ? "Scade oggi" : "Scade domani",
       badge: "border-red-200 bg-red-50 text-red-700",
-      dot: "bg-red-500 shadow-red-200",
       accent: "bg-red-500",
     };
   }
-
   if (giorni <= 7) {
     return {
       label: `${giorni} giorni`,
       badge: "border-orange-200 bg-orange-50 text-orange-700",
-      dot: "bg-orange-500 shadow-orange-200",
       accent: "bg-orange-500",
     };
   }
-
   if (giorni <= 30) {
     return {
       label: `${giorni} giorni`,
       badge: "border-amber-200 bg-amber-50 text-amber-700",
-      dot: "bg-amber-400 shadow-amber-200",
       accent: "bg-amber-400",
     };
   }
-
   return {
     label: `${giorni} giorni`,
     badge: "border-sky-200 bg-sky-50 text-sky-700",
-    dot: "bg-sky-500 shadow-sky-200",
     accent: "bg-sky-500",
   };
 }
 
+function entityLabel(doc: DocumentoRow) {
+  if (doc.dipendente) return `${doc.dipendente.cognome} ${doc.dipendente.nome}`;
+  if (doc.automezzo) return doc.automezzo.targa;
+  return null;
+}
+
 export default function ScadenzePage() {
+  const [tab, setTab] = useState<Tab>("da-classificare");
+  const [documenti, setDocumenti] = useState<DocumentoRow[]>([]);
   const [scadenze, setScadenze] = useState<ScadenzaRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [search, setSearch] = useState("");
+  const [searchDraft, setSearchDraft] = useState("");
   const [loading, setLoading] = useState(true);
   const [errore, setErrore] = useState(false);
-  const [filtro, setFiltro] = useState<Filtro>("tutte");
-  const [confermaInCorso, setConfermaInCorso] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [dateDrafts, setDateDrafts] = useState<Record<string, string>>({});
+  const [counts, setCounts] = useState({
+    daClassificare: 0,
+    conScadenza: 0,
+    nonServe: 0,
+  });
 
-  const caricaScadenze = useCallback(async () => {
+  const caricaConteggi = useCallback(async () => {
+    const [a, b, c] = await Promise.all([
+      fetch("/api/documenti?scadenza=da-classificare&limit=1").then((r) => r.json()),
+      fetch("/api/documenti?scadenza=presenti&limit=1").then((r) => r.json()),
+      fetch("/api/documenti?scadenza=non-serve&limit=1").then((r) => r.json()),
+    ]);
+    setCounts({
+      daClassificare: a.total ?? 0,
+      conScadenza: b.total ?? 0,
+      nonServe: c.total ?? 0,
+    });
+  }, []);
+
+  const carica = useCallback(async () => {
     setLoading(true);
     setErrore(false);
-
     try {
-      const response = await fetch("/api/scadenze?giorni=90&confermate=false");
-      if (!response.ok) throw new Error("Impossibile caricare le scadenze");
-      const data = await response.json();
-      setScadenze(data.scadenze ?? []);
+      if (tab === "prossime") {
+        const response = await fetch("/api/scadenze?giorni=90&confermate=false");
+        if (!response.ok) throw new Error("load");
+        const data = await response.json();
+        setScadenze(data.scadenze ?? []);
+        setDocumenti([]);
+        setTotal((data.scadenze ?? []).length);
+        setTotalPages(1);
+      } else {
+        const scadenzaParam =
+          tab === "da-classificare"
+            ? "da-classificare"
+            : tab === "con-scadenza"
+              ? "presenti"
+              : "non-serve";
+        const params = new URLSearchParams({
+          scadenza: scadenzaParam,
+          page: String(page),
+          limit: "40",
+          suggest: "1",
+        });
+        if (search) params.set("search", search);
+        const response = await fetch(`/api/documenti?${params}`);
+        if (!response.ok) throw new Error("load");
+        const data = await response.json();
+        const rows: DocumentoRow[] = data.documenti ?? [];
+        setDocumenti(rows);
+        setTotal(data.total ?? 0);
+        setTotalPages(data.totalPages ?? 1);
+        setScadenze([]);
+        setDateDrafts((prev) => {
+          const next = { ...prev };
+          for (const doc of rows) {
+            if (next[doc.id] === undefined) {
+              next[doc.id] =
+                doc.dataScadenza?.slice(0, 10) ||
+                doc.suggestedScadenza ||
+                "";
+            }
+          }
+          return next;
+        });
+      }
+      await caricaConteggi();
     } catch {
       setErrore(true);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [tab, page, search, caricaConteggi]);
 
   useEffect(() => {
-    fetch("/api/scadenze?giorni=90&confermate=false")
-      .then((response) => {
-        if (!response.ok) throw new Error("Impossibile caricare le scadenze");
-        return response.json();
-      })
-      .then((data) => setScadenze(data.scadenze ?? []))
-      .catch(() => setErrore(true))
-      .finally(() => setLoading(false));
-  }, []);
+    void carica();
+  }, [carica]);
 
-  async function conferma(id: string) {
-    setConfermaInCorso(id);
+  useEffect(() => {
+    setPage(1);
+    setDateDrafts({});
+  }, [tab, search]);
 
+  async function salvaScadenza(
+    doc: DocumentoRow,
+    dataScadenza: string,
+    opts?: { fromSuggestion?: boolean },
+  ) {
+    if (!dataScadenza) {
+      toast.error("Seleziona una data");
+      return;
+    }
+    setSavingId(doc.id);
+    try {
+      const body: Record<string, unknown> = {
+        dataScadenza,
+        nonServeScadenza: false,
+        scadenzaSource: opts?.fromSuggestion ? "FILENAME" : "MANUALE",
+      };
+      if (opts?.fromSuggestion) {
+        body.scadenzaConfidence = doc.suggestedConfidence ?? 0.85;
+        body.scadenzaRaw = doc.suggestedRaw;
+      }
+      const res = await fetch(`/api/documenti/${doc.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error("save");
+      toast.success("Scadenza salvata");
+      setDateDrafts((prev) => {
+        const next = { ...prev };
+        delete next[doc.id];
+        return next;
+      });
+      await carica();
+    } catch {
+      toast.error("Salvataggio non riuscito");
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function marcaNonServe(doc: DocumentoRow) {
+    setSavingId(doc.id);
+    try {
+      const res = await fetch(`/api/documenti/${doc.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nonServeScadenza: true, dataScadenza: null }),
+      });
+      if (!res.ok) throw new Error("save");
+      toast.success("Segnato come non serve scadenza");
+      setDateDrafts((prev) => {
+        const next = { ...prev };
+        delete next[doc.id];
+        return next;
+      });
+      await carica();
+    } catch {
+      toast.error("Operazione non riuscita");
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function ripristinaClassificazione(doc: DocumentoRow) {
+    setSavingId(doc.id);
+    try {
+      const res = await fetch(`/api/documenti/${doc.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nonServeScadenza: false,
+          dataScadenza: null,
+        }),
+      });
+      if (!res.ok) throw new Error("save");
+      toast.success("Documento da riclassificare");
+      await carica();
+    } catch {
+      toast.error("Operazione non riuscita");
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function confermaScadenza(id: string) {
+    setSavingId(id);
     try {
       const res = await fetch(`/api/scadenze/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ confermata: true }),
       });
-      if (!res.ok) throw new Error("Errore durante la conferma");
-
-      setScadenze((correnti) =>
-        correnti.map((scadenza) =>
-          scadenza.id === id ? { ...scadenza, confermata: true } : scadenza,
-        ),
+      if (!res.ok) throw new Error("confirm");
+      setScadenze((rows) =>
+        rows.map((s) => (s.id === id ? { ...s, confermata: true } : s)),
       );
       toast.success("Scadenza confermata");
     } catch {
-      toast.error("Non è stato possibile confermare la scadenza");
+      toast.error("Conferma non riuscita");
     } finally {
-      setConfermaInCorso(null);
+      setSavingId(null);
     }
   }
 
-  const riepilogo = useMemo(
+  const riepilogoProssime = useMemo(
     () => ({
       urgenti: scadenze.filter((s) => s.giorniRimanenti <= 7).length,
       inArrivo: scadenze.filter(
@@ -148,12 +309,6 @@ export default function ScadenzePage() {
     }),
     [scadenze],
   );
-
-  const scadenzeFiltrate = useMemo(() => {
-    if (filtro === "da-confermare") return scadenze.filter((s) => !s.confermata);
-    if (filtro === "confermate") return scadenze.filter((s) => s.confermata);
-    return scadenze;
-  }, [filtro, scadenze]);
 
   return (
     <div className="min-h-full bg-slate-50/70">
@@ -173,134 +328,138 @@ export default function ScadenzePage() {
                 Scadenziario
               </h1>
               <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300 sm:text-base">
-                Tieni sotto controllo le prossime attività e conferma quelle già verificate.
+                Imposta la scadenza di ogni documento oppure indica che non serve.
               </p>
             </div>
             <div className="flex items-center gap-3 rounded-2xl bg-white/7 px-4 py-3 ring-1 ring-white/10 backdrop-blur">
               <ShieldCheck className="h-5 w-5 text-emerald-300" />
               <div>
-                <p className="text-xs text-slate-400">Finestra di controllo</p>
-                <p className="text-sm font-medium text-white">Prossimi 90 giorni</p>
+                <p className="text-xs text-slate-400">Da classificare</p>
+                <p className="text-sm font-medium text-white">
+                  {counts.daClassificare} documenti
+                </p>
               </div>
             </div>
           </div>
         </section>
 
         <section className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-2xl border border-red-100 bg-white p-5 shadow-sm shadow-slate-200/60">
-            <div className="flex items-center justify-between">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-50 text-red-600">
-                <AlertCircle className="h-5 w-5" />
-              </div>
-              <span className="text-xs font-medium text-red-600">entro 7 giorni</span>
-            </div>
-            <p className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">
-              {loading ? "—" : riepilogo.urgenti}
-            </p>
-            <p className="mt-1 text-sm text-slate-500">Scadenze urgenti</p>
-          </div>
           <div className="rounded-2xl border border-amber-100 bg-white p-5 shadow-sm shadow-slate-200/60">
             <div className="flex items-center justify-between">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
                 <Clock3 className="h-5 w-5" />
               </div>
-              <span className="text-xs font-medium text-amber-600">entro 30 giorni</span>
             </div>
             <p className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">
-              {loading ? "—" : riepilogo.inArrivo}
+              {counts.daClassificare}
             </p>
-            <p className="mt-1 text-sm text-slate-500">In avvicinamento</p>
+            <p className="mt-1 text-sm text-slate-500">Da classificare</p>
+          </div>
+          <div className="rounded-2xl border border-sky-100 bg-white p-5 shadow-sm shadow-slate-200/60">
+            <div className="flex items-center justify-between">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
+                <CalendarClock className="h-5 w-5" />
+              </div>
+            </div>
+            <p className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">
+              {counts.conScadenza}
+            </p>
+            <p className="mt-1 text-sm text-slate-500">Con scadenza</p>
           </div>
           <div className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm shadow-slate-200/60">
             <div className="flex items-center justify-between">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
                 <CalendarCheck className="h-5 w-5" />
               </div>
-              <span className="text-xs font-medium text-emerald-600">verificate</span>
             </div>
             <p className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">
-              {loading ? "—" : riepilogo.confermate}
+              {counts.nonServe}
             </p>
-            <p className="mt-1 text-sm text-slate-500">Scadenze confermate</p>
+            <p className="mt-1 text-sm text-slate-500">Non serve scadenza</p>
           </div>
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
-          <div className="flex flex-col gap-4 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-            <div>
-              <h2 className="font-semibold text-slate-950">Prossime scadenze</h2>
-              <p className="mt-0.5 text-sm text-slate-500">
-                {scadenzeFiltrate.length} {scadenzeFiltrate.length === 1 ? "attività" : "attività"}
-              </p>
-            </div>
-            <div className="flex w-full rounded-xl bg-slate-100 p-1 sm:w-auto">
-              {filtri.map((item) => (
-                <button
-                  key={item.value}
-                  type="button"
-                  onClick={() => setFiltro(item.value)}
-                  className={`flex-1 rounded-lg px-3 py-2 text-xs font-medium transition sm:flex-none ${
-                    filtro === item.value
-                      ? "bg-white text-slate-950 shadow-sm"
-                      : "text-slate-500 hover:text-slate-800"
-                  }`}
+          <div className="flex flex-col gap-4 border-b border-slate-100 px-4 py-4 sm:px-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex w-full flex-wrap rounded-xl bg-slate-100 p-1 sm:w-auto">
+                {tabs.map((item) => (
+                  <button
+                    key={item.value}
+                    type="button"
+                    onClick={() => setTab(item.value)}
+                    className={`rounded-lg px-3 py-2 text-xs font-medium transition ${
+                      tab === item.value
+                        ? "bg-white text-slate-950 shadow-sm"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+              {tab !== "prossime" && (
+                <form
+                  className="relative w-full sm:max-w-xs"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    setSearch(searchDraft.trim());
+                  }}
                 >
-                  {item.label}
-                </button>
-              ))}
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Input
+                    value={searchDraft}
+                    onChange={(e) => setSearchDraft(e.target.value)}
+                    placeholder="Cerca documento…"
+                    className="pl-9"
+                  />
+                </form>
+              )}
             </div>
+            <p className="text-sm text-slate-500">
+              {tab === "prossime"
+                ? `${scadenze.length} scadenze nei prossimi 90 giorni · ${riepilogoProssime.urgenti} urgenti`
+                : `${total} documenti`}
+            </p>
           </div>
 
           {loading ? (
             <div className="flex min-h-72 flex-col items-center justify-center gap-3">
               <Loader2 className="h-7 w-7 animate-spin text-sky-600" />
-              <p className="text-sm text-slate-500">Caricamento scadenze…</p>
+              <p className="text-sm text-slate-500">Caricamento…</p>
             </div>
           ) : errore ? (
             <div className="flex min-h-72 flex-col items-center justify-center px-6 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-600">
                 <AlertCircle className="h-6 w-6" />
               </div>
-              <h3 className="mt-4 font-semibold text-slate-950">Caricamento non riuscito</h3>
-              <p className="mt-1 max-w-sm text-sm text-slate-500">
-                Si è verificato un problema nel recupero delle scadenze.
-              </p>
-              <Button className="mt-5" variant="outline" onClick={caricaScadenze}>
+              <h3 className="mt-4 font-semibold text-slate-950">
+                Caricamento non riuscito
+              </h3>
+              <Button className="mt-5" variant="outline" onClick={() => void carica()}>
                 <RefreshCw data-icon="inline-start" />
                 Riprova
               </Button>
             </div>
-          ) : scadenzeFiltrate.length === 0 ? (
-            <div className="flex min-h-72 flex-col items-center justify-center px-6 text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
-                <CheckCircle2 className="h-7 w-7" />
-              </div>
-              <h3 className="mt-4 font-semibold text-slate-950">Tutto sotto controllo</h3>
-              <p className="mt-1 max-w-sm text-sm text-slate-500">
-                Non ci sono scadenze in questa categoria nei prossimi 90 giorni.
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {scadenzeFiltrate.map((scadenza) => {
-                const urgenza = informazioniUrgenza(scadenza.giorniRimanenti);
-
-                return (
-                  <article
-                    key={scadenza.id}
-                    className="group relative grid gap-4 px-4 py-5 transition hover:bg-slate-50/70 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-6"
-                  >
-                    <span
-                      aria-hidden="true"
-                      className={`absolute inset-y-4 left-0 w-1 rounded-r-full ${urgenza.accent}`}
-                    />
-                    <div className="flex min-w-0 gap-4">
-                      <div className="relative mt-0.5 hidden shrink-0 sm:block">
-                        <span
-                          className={`block h-3 w-3 rounded-full shadow-[0_0_0_5px] ${urgenza.dot}`}
-                        />
-                        <span className="absolute left-1/2 top-5 h-9 w-px -translate-x-1/2 bg-slate-200 group-last:hidden" />
-                      </div>
+          ) : tab === "prossime" ? (
+            scadenze.length === 0 ? (
+              <EmptyState
+                title="Nessuna scadenza imminente"
+                description="Non ci sono scadenze nei prossimi 90 giorni."
+              />
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {scadenze.map((scadenza) => {
+                  const urgenza = informazioniUrgenza(scadenza.giorniRimanenti);
+                  return (
+                    <article
+                      key={scadenza.id}
+                      className="relative grid gap-4 px-4 py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-6"
+                    >
+                      <span
+                        aria-hidden
+                        className={`absolute inset-y-4 left-0 w-1 rounded-r-full ${urgenza.accent}`}
+                      />
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <h3 className="truncate font-semibold text-slate-950">
@@ -319,54 +478,241 @@ export default function ScadenzePage() {
                             {formatoData(scadenza.dataScadenza)}
                           </span>
                           {scadenza.documento?.titoloOriginale && (
-                            <span className="inline-flex min-w-0 items-center gap-1.5">
+                            <Link
+                              href={`/documenti/${scadenza.documento.id}`}
+                              className="inline-flex min-w-0 items-center gap-1.5 hover:text-slate-800"
+                            >
                               <FileText className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                               <span className="max-w-64 truncate">
                                 {scadenza.documento.titoloOriginale}
                               </span>
-                            </span>
-                          )}
-                          {scadenza.responsabile?.name && (
-                            <span className="inline-flex items-center gap-1.5">
-                              <UserRound className="h-3.5 w-3.5 text-slate-400" />
-                              {scadenza.responsabile.name}
-                            </span>
+                            </Link>
                           )}
                         </div>
                       </div>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-3 sm:justify-end">
-                      <span
-                        className={`inline-flex min-w-24 justify-center rounded-full border px-3 py-1.5 text-xs font-semibold ${urgenza.badge}`}
-                      >
-                        {urgenza.label}
-                      </span>
-                      {!scadenza.confermata ? (
-                        <Button
-                          size="sm"
-                          onClick={() => conferma(scadenza.id)}
-                          disabled={confermaInCorso === scadenza.id}
-                          className="bg-slate-950 text-white hover:bg-slate-800"
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={`inline-flex min-w-24 justify-center rounded-full border px-3 py-1.5 text-xs font-semibold ${urgenza.badge}`}
                         >
-                          {confermaInCorso === scadenza.id ? (
-                            <Loader2 className="animate-spin" data-icon="inline-start" />
-                          ) : (
-                            <Check data-icon="inline-start" />
+                          {urgenza.label}
+                        </span>
+                        {!scadenza.confermata && (
+                          <Button
+                            size="sm"
+                            onClick={() => void confermaScadenza(scadenza.id)}
+                            disabled={savingId === scadenza.id}
+                            className="bg-slate-950 text-white hover:bg-slate-800"
+                          >
+                            {savingId === scadenza.id ? (
+                              <Loader2 className="animate-spin" data-icon="inline-start" />
+                            ) : (
+                              <Check data-icon="inline-start" />
+                            )}
+                            Conferma
+                          </Button>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )
+          ) : documenti.length === 0 ? (
+            <EmptyState
+              title="Nessun documento"
+              description={
+                tab === "da-classificare"
+                  ? "Tutti i documenti hanno già una scadenza o sono segnati come non necessari."
+                  : "Nessun documento in questa categoria."
+              }
+            />
+          ) : (
+            <>
+              <div className="divide-y divide-slate-100">
+                {documenti.map((doc) => {
+                  const who = entityLabel(doc);
+                  const draft = dateDrafts[doc.id] ?? "";
+                  const busy = savingId === doc.id;
+                  const hasSuggestion =
+                    !!doc.suggestedScadenza && tab === "da-classificare";
+
+                  return (
+                    <article
+                      key={doc.id}
+                      className="grid gap-4 px-4 py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:px-6"
+                    >
+                      <div className="min-w-0">
+                        <Link
+                          href={`/documenti/${doc.id}`}
+                          className="font-semibold text-slate-950 hover:underline"
+                        >
+                          {doc.titoloOriginale}
+                        </Link>
+                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-slate-500">
+                          <span className="inline-flex items-center gap-1.5">
+                            <FileText className="h-3.5 w-3.5 text-slate-400" />
+                            {doc.categoria}
+                            {doc.sottocategoria ? ` / ${doc.sottocategoria}` : ""}
+                          </span>
+                          {who && (
+                            <span className="inline-flex items-center gap-1.5">
+                              <UserRound className="h-3.5 w-3.5 text-slate-400" />
+                              {who}
+                            </span>
                           )}
-                          Conferma
-                        </Button>
-                      ) : (
-                        <ChevronRight className="hidden h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-500 sm:block" />
-                      )}
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
+                          {doc.dataScadenza && (
+                            <span className="inline-flex items-center gap-1.5">
+                              <CalendarClock className="h-3.5 w-3.5 text-slate-400" />
+                              {formatoData(doc.dataScadenza)}
+                            </span>
+                          )}
+                        </div>
+                        {hasSuggestion && (
+                          <p className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-violet-50 px-2 py-1 text-xs text-violet-700">
+                            <Sparkles className="h-3.5 w-3.5" />
+                            Suggerita dal titolo:{" "}
+                            <strong>{formatoData(doc.suggestedScadenza!)}</strong>
+                            {doc.suggestedRaw ? ` (${doc.suggestedRaw})` : ""}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col gap-2 sm:items-end">
+                        {tab !== "non-serve" && (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Input
+                              type="date"
+                              value={draft}
+                              onChange={(e) =>
+                                setDateDrafts((prev) => ({
+                                  ...prev,
+                                  [doc.id]: e.target.value,
+                                }))
+                              }
+                              className="w-auto"
+                              disabled={busy}
+                            />
+                            <Button
+                              size="sm"
+                              disabled={busy || !draft}
+                              onClick={() =>
+                                void salvaScadenza(doc, draft, {
+                                  fromSuggestion:
+                                    draft === doc.suggestedScadenza,
+                                })
+                              }
+                              className="bg-slate-950 text-white hover:bg-slate-800"
+                            >
+                              {busy ? (
+                                <Loader2 className="animate-spin" data-icon="inline-start" />
+                              ) : (
+                                <Check data-icon="inline-start" />
+                              )}
+                              Salva
+                            </Button>
+                          </div>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                          {tab === "da-classificare" && hasSuggestion && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() =>
+                                void salvaScadenza(doc, doc.suggestedScadenza!, {
+                                  fromSuggestion: true,
+                                })
+                              }
+                            >
+                              <Sparkles data-icon="inline-start" />
+                              Usa suggerimento
+                            </Button>
+                          )}
+                          {tab === "da-classificare" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => void marcaNonServe(doc)}
+                            >
+                              <Ban data-icon="inline-start" />
+                              Non serve scadenza
+                            </Button>
+                          )}
+                          {tab === "con-scadenza" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => void marcaNonServe(doc)}
+                            >
+                              <Ban data-icon="inline-start" />
+                              Non serve
+                            </Button>
+                          )}
+                          {tab === "non-serve" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => void ripristinaClassificazione(doc)}
+                            >
+                              Riclassifica
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 sm:px-6">
+                  <p className="text-xs text-slate-500">
+                    Pagina {page} di {totalPages}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={page <= 1}
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    >
+                      Precedente
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={page >= totalPages}
+                      onClick={() => setPage((p) => p + 1)}
+                    >
+                      Successiva
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </section>
       </div>
+    </div>
+  );
+}
+
+function EmptyState({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex min-h-72 flex-col items-center justify-center px-6 text-center">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+        <CheckCircle2 className="h-7 w-7" />
+      </div>
+      <h3 className="mt-4 font-semibold text-slate-950">{title}</h3>
+      <p className="mt-1 max-w-sm text-sm text-slate-500">{description}</p>
     </div>
   );
 }

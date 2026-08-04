@@ -77,6 +77,12 @@ type Dipendente = {
   cognome: string;
 };
 
+type CategoriaDipendente = TariffeDipendente & {
+  id: string;
+  nome: string;
+  sistema: boolean;
+};
+
 type CostoAccessorio = {
   id: string;
   dipendenteId: string;
@@ -104,6 +110,11 @@ const EMPTY_ACCESSORIO = {
 
 export default function CostiPage() {
   const [form, setForm] = useState<TariffeDipendente>(EMPTY);
+  const [categorie, setCategorie] = useState<CategoriaDipendente[]>([]);
+  const [categoriaId, setCategoriaId] = useState("");
+  const [categoriaNome, setCategoriaNome] = useState("");
+  const [nuovaCategoria, setNuovaCategoria] = useState("");
+  const [savingCategoria, setSavingCategoria] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [mese, setMese] = useState(() => localDateKey().slice(0, 7));
@@ -119,7 +130,13 @@ export default function CostiPage() {
       .then(async (res) => {
         if (!res.ok) throw new Error("load");
         const data = await res.json();
-        setForm(data.costi);
+        const loaded = data.categorie as CategoriaDipendente[];
+        setCategorie(loaded);
+        if (loaded[0]) {
+          setCategoriaId(loaded[0].id);
+          setCategoriaNome(loaded[0].nome);
+          setForm(loaded[0]);
+        }
       })
       .catch(() => toast.error("Errore caricamento costi"))
       .finally(() => setLoading(false));
@@ -169,7 +186,7 @@ export default function CostiPage() {
     const res = await fetch("/api/costi", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+      body: JSON.stringify({ id: categoriaId, nome: categoriaNome, ...form }),
     });
     setSaving(false);
     if (!res.ok) {
@@ -177,8 +194,61 @@ export default function CostiPage() {
       return;
     }
     const data = await res.json();
-    setForm(data.costi);
-    toast.success("Costi standard salvati");
+    setForm(data.categoria);
+    setCategoriaNome(data.categoria.nome);
+    setCategorie((current) =>
+      current.map((categoria) =>
+        categoria.id === data.categoria.id ? data.categoria : categoria
+      )
+    );
+    toast.success("Maschera costi salvata");
+  }
+
+  function selectCategoria(categoria: CategoriaDipendente) {
+    setCategoriaId(categoria.id);
+    setCategoriaNome(categoria.nome);
+    setForm(categoria);
+  }
+
+  async function createCategoria() {
+    const nome = nuovaCategoria.trim();
+    if (!nome) return;
+    setSavingCategoria(true);
+    const res = await fetch("/api/costi", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nome }),
+    });
+    setSavingCategoria(false);
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      toast.error(data?.error ?? "Errore creazione categoria");
+      return;
+    }
+    setCategorie((current) => [...current, data.categoria]);
+    selectCategoria(data.categoria);
+    setNuovaCategoria("");
+    toast.success("Categoria aggiunta");
+  }
+
+  async function deleteCategoria() {
+    const categoria = categorie.find((item) => item.id === categoriaId);
+    if (!categoria || categoria.sistema) return;
+    if (!window.confirm(`Eliminare la categoria “${categoria.nome}”?`)) return;
+    const res = await fetch("/api/costi", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: categoria.id }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      toast.error(data?.error ?? "Errore eliminazione categoria");
+      return;
+    }
+    const next = categorie.filter((item) => item.id !== categoria.id);
+    setCategorie(next);
+    if (next[0]) selectCategoria(next[0]);
+    toast.success("Categoria eliminata");
   }
 
   async function saveAccessorio(e: React.FormEvent) {
@@ -227,6 +297,10 @@ export default function CostiPage() {
     toast.success("Costo accessorio eliminato");
   }
 
+  const selectedCategoria = categorie.find(
+    (categoria) => categoria.id === categoriaId
+  );
+
   return (
     <div className="p-6 space-y-8 max-w-5xl">
       <div>
@@ -234,8 +308,8 @@ export default function CostiPage() {
           <Coins className="h-6 w-6" /> Costi standard
         </h1>
         <p className="text-sm text-gray-500 mt-1">
-          Valori di default applicati ai nuovi dipendenti. Puoi personalizzarli
-          per ciascuno dalla pagina Dipendenti.
+          Definisci le categorie e la relativa maschera di default. Ogni
+          dipendente può poi avere tariffe personalizzate.
         </p>
       </div>
 
@@ -248,6 +322,74 @@ export default function CostiPage() {
           onSubmit={save}
           className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm space-y-5"
         >
+          <div className="space-y-3 border-b border-gray-100 pb-5">
+            <Label>Categoria dipendente</Label>
+            <div className="flex flex-wrap gap-2">
+              {categorie.map((categoria) => (
+                <Button
+                  key={categoria.id}
+                  type="button"
+                  variant={categoria.id === categoriaId ? "default" : "outline"}
+                  onClick={() => selectCategoria(categoria)}
+                  className={
+                    categoria.id === categoriaId
+                      ? "bg-sky-700 hover:bg-sky-800"
+                      : undefined
+                  }
+                >
+                  {categoria.nome}
+                </Button>
+              ))}
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Input
+                value={nuovaCategoria}
+                onChange={(e) => setNuovaCategoria(e.target.value)}
+                placeholder="Nuova categoria (es. Elettricista)"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    createCategoria();
+                  }
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={createCategoria}
+                disabled={savingCategoria || !nuovaCategoria.trim()}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Aggiungi categoria
+              </Button>
+            </div>
+          </div>
+
+          {selectedCategoria && (
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+              <div className="flex-1 space-y-1.5">
+                <Label htmlFor="categoria-nome">Nome categoria</Label>
+                <Input
+                  id="categoria-nome"
+                  value={categoriaNome}
+                  disabled={selectedCategoria.sistema}
+                  onChange={(e) => setCategoriaNome(e.target.value)}
+                />
+              </div>
+              {!selectedCategoria.sistema && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="text-red-600 hover:text-red-700"
+                  onClick={deleteCategoria}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Elimina
+                </Button>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {FIELDS.map(({ key, label, hint }) => (
               <div key={key} className="space-y-1.5">
@@ -284,7 +426,7 @@ export default function CostiPage() {
               disabled={saving}
               className="bg-orange-500 hover:bg-orange-600"
             >
-              {saving ? "Salvataggio..." : "Salva costi"}
+              {saving ? "Salvataggio..." : "Salva maschera"}
             </Button>
           </div>
         </form>

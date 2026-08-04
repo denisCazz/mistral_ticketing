@@ -17,9 +17,11 @@ import {
   ClipboardList,
   FolderOpen,
   CalendarClock,
+  CalendarRange,
   IdCard,
   Coins,
   Settings,
+  Warehouse,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -43,7 +45,9 @@ const navItems = [
   { href: "/scadenze", label: "Scadenze", icon: CalendarClock, roles: ["ADMIN", "OPERATORE"] },
   { href: "/statistiche", label: "Statistiche", icon: BarChart3, roles: ["ADMIN", "OPERATORE"] },
   { href: "/clienti", label: "Clienti", icon: Users, roles: ["ADMIN", "OPERATORE"] },
-  { href: "/dipendenti", label: "Dipendenti", icon: IdCard, roles: ["ADMIN"] },
+  { href: "/magazzino", label: "Magazzino", icon: Warehouse, roles: ["ADMIN", "OPERATORE"] },
+  { href: "/dipendenti", label: "Calendario dipendenti", icon: CalendarRange, roles: ["ADMIN"] },
+  { href: "/dipendenti/anagrafica", label: "Dipendenti", icon: IdCard, roles: ["ADMIN"] },
   { href: "/costi", label: "Costi", icon: Coins, roles: ["ADMIN"] },
   { href: "/configurazione", label: "Configurazione", icon: Settings, roles: ["ADMIN"] },
   { href: "/admin/utenti", label: "Utenti", icon: UserCog, roles: ["ADMIN"] },
@@ -75,7 +79,10 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           .filter((item) => item.roles.includes(role))
           .map((item) => {
             const Icon = item.icon;
-            const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+            const active =
+              item.href === "/" || item.href === "/dipendenti"
+                ? pathname === item.href
+                : pathname.startsWith(item.href);
             return (
               <Link
                 key={item.href}

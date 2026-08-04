@@ -53,6 +53,43 @@ export function serializeTariffe(row: {
   };
 }
 
+export const CATEGORIE_DIPENDENTE_BASE = [
+  { id: "manutentore", nome: "Manutentore" },
+  { id: "programmatore", nome: "Programmatore" },
+] as const;
+
+export async function ensureCategorieDipendente() {
+  const standard = await getOrCreateCostiStandard();
+  await Promise.all(
+    CATEGORIE_DIPENDENTE_BASE.map((categoria) =>
+      prisma.categoriaDipendente.upsert({
+        where: { id: categoria.id },
+        create: {
+          ...categoria,
+          sistema: true,
+          ...standard,
+        },
+        update: {},
+      })
+    )
+  );
+}
+
+export async function getTariffeCategoria(
+  categoriaId: string
+): Promise<TariffeDipendente> {
+  await ensureCategorieDipendente();
+  const categoria = await prisma.categoriaDipendente.findUnique({
+    where: { id: categoriaId },
+  });
+  if (categoria) return serializeTariffe(categoria);
+
+  const fallback = await prisma.categoriaDipendente.findUniqueOrThrow({
+    where: { id: "manutentore" },
+  });
+  return serializeTariffe(fallback);
+}
+
 export async function getOrCreateCostiStandard(): Promise<TariffeDipendente> {
   let settings = await prisma.aziendaSettings.findUnique({
     where: { id: "default" },

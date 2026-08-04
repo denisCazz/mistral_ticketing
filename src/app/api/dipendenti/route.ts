@@ -4,9 +4,10 @@ import { canAccessDocumentiHr } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import {
   DIPENDENTE_DEFAULT_PASSWORD,
+  ensureCategorieDipendente,
   ensureUserForDipendente,
   ensureUsersForDipendenti,
-  getOrCreateCostiStandard,
+  getTariffeCategoria,
   prefillSedeWeekdays,
 } from "@/lib/dipendente-user";
 import {
@@ -22,6 +23,8 @@ function serializeDipendente(
     active: boolean;
     archiviato: boolean;
     userId: string | null;
+    categoriaId: string;
+    categoria: { id: string; nome: string };
     costoGiornata: unknown | null;
     indennitaTrasferta: unknown | null;
     costoMutua: unknown | null;
@@ -40,6 +43,17 @@ function serializeDipendente(
     archiviato: d.archiviato,
     userId: d.userId,
     email: userEmail ?? null,
+    categoriaId: d.categoriaId,
+    categoria: d.categoria,
+    tariffePersonalizzate: {
+      costoGiornata: d.costoGiornata == null ? null : Number(d.costoGiornata),
+      indennitaTrasferta:
+        d.indennitaTrasferta == null ? null : Number(d.indennitaTrasferta),
+      costoMutua: d.costoMutua == null ? null : Number(d.costoMutua),
+      costoPermesso: d.costoPermesso == null ? null : Number(d.costoPermesso),
+      costoFerie: d.costoFerie == null ? null : Number(d.costoFerie),
+      costoFestivo: d.costoFestivo == null ? null : Number(d.costoFestivo),
+    },
     ...resolveTariffe(d, standard),
   };
 }
@@ -56,12 +70,15 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const includeArchiviati = searchParams.get("archiviati") === "1";
   const ensureUsers = searchParams.get("ensureUsers") === "1";
-  const standard = await getOrCreateCostiStandard();
+  await ensureCategorieDipendente();
 
   let rows = await prisma.dipendente.findMany({
     where: includeArchiviati ? undefined : { archiviato: false },
     orderBy: [{ cognome: "asc" }, { nome: "asc" }],
-    include: { user: { select: { email: true } } },
+    include: {
+      user: { select: { email: true } },
+      categoria: { select: { id: true, nome: true } },
+    },
   });
 
   if (ensureUsers) {
@@ -69,13 +86,25 @@ export async function GET(req: Request) {
     rows = await prisma.dipendente.findMany({
       where: includeArchiviati ? undefined : { archiviato: false },
       orderBy: [{ cognome: "asc" }, { nome: "asc" }],
-      include: { user: { select: { email: true } } },
+      include: {
+        user: { select: { email: true } },
+        categoria: { select: { id: true, nome: true } },
+      },
     });
   }
 
-  const dipendenti = rows.map((d) =>
-    serializeDipendente(d, standard, d.user?.email)
+  const standardEntries = await Promise.all(
+    [...new Set(rows.map((d) => d.categoriaId))].map(async (categoriaId) => [
+      categoriaId,
+      await getTariffeCategoria(categoriaId),
+    ] as const)
   );
+  const standardMap = new Map(standardEntries);
+  const dipendenti = rows.map((d) => {
+    const standard = standardMap.get(d.categoriaId);
+    if (!standard) throw new Error(`Tariffe mancanti per ${d.categoriaId}`);
+    return serializeDipendente(d, standard, d.user?.email);
+  });
 
   return NextResponse.json({ dipendenti });
 }
@@ -92,11 +121,19 @@ export async function POST(req: Request) {
   const body = await req.json();
   const nome = String(body.nome ?? "").trim();
   const cognome = String(body.cognome ?? "").trim();
+  const categoriaId = String(body.categoriaId ?? "manutentore").trim();
   if (!nome || !cognome) {
     return NextResponse.json(
       { error: "Nome e cognome obbligatori" },
       { status: 400 }
     );
+  }
+  await ensureCategorieDipendente();
+  const categoria = await prisma.categoriaDipendente.findUnique({
+    where: { id: categoriaId },
+  });
+  if (!categoria) {
+    return NextResponse.json({ error: "Categoria non valida" }, { status: 400 });
   }
 
   const existing = await prisma.dipendente.findFirst({
@@ -104,15 +141,21 @@ export async function POST(req: Request) {
       nome: { equals: nome, mode: "insensitive" },
       cognome: { equals: cognome, mode: "insensitive" },
     },
-    include: { user: { select: { email: true } } },
+    include: {
+      user: { select: { email: true } },
+      categoria: { select: { id: true, nome: true } },
+    },
   });
   if (existing) {
-    const standard = await getOrCreateCostiStandard();
+    const standard = await getTariffeCategoria(existing.categoriaId);
     if (!existing.userId) {
       await ensureUserForDipendente(existing);
       const refreshed = await prisma.dipendente.findUnique({
         where: { id: existing.id },
-        include: { user: { select: { email: true } } },
+        include: {
+          user: { select: { email: true } },
+          categoria: { select: { id: true, nome: true } },
+        },
       });
       if (refreshed) {
         return NextResponse.json({
@@ -135,6 +178,7 @@ export async function POST(req: Request) {
     data: {
       nome,
       cognome,
+      categoriaId,
     },
   });
 
@@ -153,9 +197,12 @@ export async function POST(req: Request) {
 
   const full = await prisma.dipendente.findUniqueOrThrow({
     where: { id: dipendente.id },
-    include: { user: { select: { email: true } } },
+    include: {
+      user: { select: { email: true } },
+      categoria: { select: { id: true, nome: true } },
+    },
   });
-  const standard = await getOrCreateCostiStandard();
+  const standard = await getTariffeCategoria(full.categoriaId);
 
   return NextResponse.json(
     {

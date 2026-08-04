@@ -51,9 +51,40 @@ describe("scadenza-parser", () => {
     expect(r.confidence).toBeGreaterThan(0.8);
   });
 
-  it("rileva cartella scaduto", () => {
+  it("rileva cartella scaduto senza data", () => {
     const r = parseScadenzaFromText("attestato.pdf", "PREPOSTO/Scaduto");
     expect(r.statoValidita).toBe("SCADUTO");
+    expect(r.dataScadenza).toBeNull();
+  });
+
+  it("estrae data anche da cartella Scaduto", () => {
+    const r = parseScadenzaFromText(
+      "Ardino Alessio PLE scad. 18 06 26.pdf",
+      "PLE ARDINO/Scaduti"
+    );
+    expect(r.dataScadenza?.getUTCFullYear()).toBe(2026);
+    expect(r.dataScadenza?.getUTCMonth()).toBe(5);
+    expect(r.dataScadenza?.getUTCDate()).toBe(18);
+    expect(r.statoValidita).toBe("SCADUTO");
+  });
+
+  it("estrae scad con underscore", () => {
+    const r = parseScadenzaFromText(
+      "ALISHANI_MARIO__Idoneita scad 17_05_2022.pdf"
+    );
+    expect(r.dataScadenza?.getUTCFullYear()).toBe(2022);
+    expect(r.dataScadenza?.getUTCMonth()).toBe(4);
+    expect(r.dataScadenza?.getUTCDate()).toBe(17);
+  });
+
+  it("estrae fino al / fino a", () => {
+    const r = parseScadenzaFromText(
+      "ROSSO MARCO_idoneita lavorativa fino a 16 12 2024.pdf"
+    );
+    expect(r.dataScadenza?.getUTCFullYear()).toBe(2024);
+    expect(r.dataScadenza?.getUTCMonth()).toBe(11);
+    expect(r.dataScadenza?.getUTCDate()).toBe(16);
+    expect(r.confidence).toBeGreaterThanOrEqual(0.85);
   });
 });
 

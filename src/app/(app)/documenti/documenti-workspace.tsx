@@ -849,6 +849,13 @@ export default function DocumentiWorkspace() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [navReady, setNavReady] = useState(false);
+  const initialDestination = useRef({
+    dipendenteId: searchParams.get("dipendenteId"),
+    automezzoId: searchParams.get("automezzoId"),
+  });
+  const initialDestinationResolved = useRef(
+    !initialDestination.current.dipendenteId && !initialDestination.current.automezzoId
+  );
 
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [total, setTotal] = useState(0);
@@ -887,7 +894,7 @@ export default function DocumentiWorkspace() {
 
   // Keep URL in sync so "indietro" ripristina categoria/destinazione
   useEffect(() => {
-    if (!navReady) return;
+    if (!navReady || !initialDestinationResolved.current) return;
     const params = new URLSearchParams();
     if (section) params.set("section", section);
     if (category) params.set("categoria", category);
@@ -930,8 +937,8 @@ export default function DocumentiWorkspace() {
       status ||
       expiry ||
       (section === "AZIENDA" && category) ||
-      (section === "DIPENDENTE" && destination) ||
-      (section === "AUTOMEZZO" && destination)
+      (section === "DIPENDENTE" && (destination || category)) ||
+      (section === "AUTOMEZZO" && (destination || category))
   );
 
   const fetchTree = useCallback(async (force = false) => {
@@ -961,6 +968,8 @@ export default function DocumentiWorkspace() {
 
   const fetchDocuments = useCallback(
     async (force = false) => {
+      const currentRequest = ++requestId.current;
+
       if (!hasDocumentScope) {
         setDocuments([]);
         setListTotal(0);
@@ -988,7 +997,6 @@ export default function DocumentiWorkspace() {
         }
       }
 
-      const currentRequest = ++requestId.current;
       setLoading(true);
       try {
         const response = await fetch(`/api/documenti?${queryKey}`);
@@ -1012,17 +1020,20 @@ export default function DocumentiWorkspace() {
     fetchTree();
   }, [fetchTree]);
 
-  // Resolve dipendente/automezzo from URL after tree is available
+  // Resolve the initial URL once. Later URL changes are produced by local navigation.
   useEffect(() => {
-    if (!tree.length) return;
-    const dipendenteId = searchParams.get("dipendenteId");
-    const automezzoId = searchParams.get("automezzoId");
-    if (!dipendenteId && !automezzoId) return;
-    const found = findDestination(tree, section, dipendenteId, automezzoId);
-    if (found && found.key !== destination?.key) {
-      setDestination(found);
-    }
-  }, [tree, section, searchParams, destination?.key]);
+    if (treeLoading || initialDestinationResolved.current) return;
+    const found = findDestination(
+      tree,
+      section,
+      initialDestination.current.dipendenteId,
+      initialDestination.current.automezzoId
+    );
+    queueMicrotask(() => {
+      setDestination((current) => (found?.key === current?.key ? current : found));
+      initialDestinationResolved.current = true;
+    });
+  }, [tree, treeLoading, section]);
 
   useEffect(() => {
     fetchDocuments();
@@ -1056,7 +1067,8 @@ export default function DocumentiWorkspace() {
       setDestination(null);
     } else {
       setDestination(node);
-      setCategory(null);
+      const hasLinkedEntity = Boolean(node.dipendenteId || node.automezzoId);
+      setCategory(hasLinkedEntity ? null : (node.categoria ?? null));
     }
   }
 
@@ -1166,7 +1178,8 @@ export default function DocumentiWorkspace() {
           >
             <option value="">Tutte le scadenze</option>
             <option value="presenti">Con scadenza</option>
-            <option value="mancanti">Senza scadenza</option>
+            <option value="mancanti">Da classificare</option>
+            <option value="non-serve">Non serve scadenza</option>
           </select>
         </div>
       </div>

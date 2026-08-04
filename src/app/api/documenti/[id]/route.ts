@@ -52,23 +52,69 @@ export async function PUT(req: Request, { params }: Params) {
   const { id } = await params;
   const body = await req.json();
 
+  const nonServe =
+    typeof body.nonServeScadenza === "boolean" ? body.nonServeScadenza : undefined;
+
+  let dataScadenza: Date | null | undefined = undefined;
+  if (nonServe === true) {
+    dataScadenza = null;
+  } else if (body.dataScadenza) {
+    dataScadenza = new Date(body.dataScadenza);
+  } else if (body.dataScadenza === null) {
+    dataScadenza = null;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  let statoValidita = body.statoValidita as string | undefined;
+  if (dataScadenza instanceof Date && !Number.isNaN(dataScadenza.getTime())) {
+    statoValidita = dataScadenza < today ? "SCADUTO" : "VALIDO";
+  }
+
   const documento = await prisma.documento.update({
     where: { id },
     data: {
       categoria: body.categoria,
       sottocategoria: body.sottocategoria,
-      dataScadenza: body.dataScadenza
-        ? new Date(body.dataScadenza)
-        : body.dataScadenza === null
-          ? null
-          : undefined,
-      statoValidita: body.statoValidita,
+      dataScadenza,
+      nonServeScadenza:
+        nonServe === true
+          ? true
+          : dataScadenza instanceof Date
+            ? false
+            : nonServe === false
+              ? false
+              : undefined,
+      statoValidita,
       aiWhitelist: body.aiWhitelist,
-      scadenzaSource: body.scadenzaSource,
+      scadenzaSource:
+        nonServe === true
+          ? null
+          : body.scadenzaSource ??
+            (dataScadenza instanceof Date ? "MANUALE" : undefined),
+      scadenzaConfidence:
+        nonServe === true
+          ? null
+          : dataScadenza instanceof Date
+            ? (body.scadenzaConfidence ?? 1)
+            : body.dataScadenza === null
+              ? null
+              : undefined,
+      scadenzaRaw:
+        nonServe === true
+          ? null
+          : body.scadenzaRaw !== undefined
+            ? body.scadenzaRaw
+            : body.dataScadenza === null
+              ? null
+              : undefined,
     },
   });
 
-  if (body.dataScadenza) {
+  if (nonServe === true || body.dataScadenza === null) {
+    await prisma.scadenza.deleteMany({ where: { documentoId: id } });
+  } else if (dataScadenza instanceof Date && !Number.isNaN(dataScadenza.getTime())) {
     const existingScadenza = await prisma.scadenza.findFirst({
       where: { documentoId: id },
     });
@@ -76,20 +122,25 @@ export async function PUT(req: Request, { params }: Params) {
       await prisma.scadenza.update({
         where: { id: existingScadenza.id },
         data: {
-          dataScadenza: new Date(body.dataScadenza),
+          dataScadenza,
           confermata: true,
-          fonte: "MANUALE",
+          fonte: body.scadenzaSource ?? "MANUALE",
+          confidence: body.scadenzaConfidence ?? 1,
+          rawValue: body.scadenzaRaw ?? existingScadenza.rawValue,
         },
       });
     } else {
       await prisma.scadenza.create({
         data: {
           documentoId: id,
+          dipendenteId: documento.dipendenteId,
+          automezzoId: documento.automezzoId,
           titolo: documento.titoloOriginale,
-          dataScadenza: new Date(body.dataScadenza),
-          fonte: "MANUALE",
+          dataScadenza,
+          fonte: body.scadenzaSource ?? "MANUALE",
           confermata: true,
-          confidence: 1,
+          confidence: body.scadenzaConfidence ?? 1,
+          rawValue: body.scadenzaRaw ?? null,
         },
       });
     }

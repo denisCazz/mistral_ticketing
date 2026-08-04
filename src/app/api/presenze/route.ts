@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import {
+  ensureCategorieDipendente,
   ensureUsersForDipendenti,
-  getOrCreateCostiStandard,
+  getTariffeCategoria,
   prefillSedeWeekdays,
 } from "@/lib/dipendente-user";
 import {
@@ -33,6 +34,8 @@ function serializeDipendente(d: {
   active: boolean;
   archiviato: boolean;
   userId: string | null;
+  categoriaId: string;
+  categoria: { id: string; nome: string };
   costoGiornata: unknown | null;
   indennitaTrasferta: unknown | null;
   costoMutua: unknown | null;
@@ -49,6 +52,8 @@ function serializeDipendente(d: {
     archiviato: d.archiviato,
     userId: d.userId,
     email: d.user?.email ?? null,
+    categoriaId: d.categoriaId,
+    categoria: d.categoria,
     ...resolveTariffe(d, standard),
   };
 }
@@ -72,12 +77,15 @@ export async function GET(req: Request) {
   }
 
   const { from, to } = monthRange(ym.year, ym.month);
-  const standard = await getOrCreateCostiStandard();
+  await ensureCategorieDipendente();
 
   let dipendenti = await prisma.dipendente.findMany({
     where: { archiviato: false },
     orderBy: [{ cognome: "asc" }, { nome: "asc" }],
-    include: { user: { select: { email: true } } },
+    include: {
+      user: { select: { email: true } },
+      categoria: { select: { id: true, nome: true } },
+    },
   });
 
   const missingUsers = dipendenti.filter((d) => !d.userId);
@@ -86,7 +94,10 @@ export async function GET(req: Request) {
     dipendenti = await prisma.dipendente.findMany({
       where: { archiviato: false },
       orderBy: [{ cognome: "asc" }, { nome: "asc" }],
-      include: { user: { select: { email: true } } },
+      include: {
+        user: { select: { email: true } },
+        categoria: { select: { id: true, nome: true } },
+      },
     });
   }
 
@@ -118,10 +129,21 @@ export async function GET(req: Request) {
     },
     _sum: { importo: true },
   });
+  const standardEntries = await Promise.all(
+    [...new Set(dipendenti.map((d) => d.categoriaId))].map(
+      async (categoriaId) =>
+        [categoriaId, await getTariffeCategoria(categoriaId)] as const
+    )
+  );
+  const standardMap = new Map(standardEntries);
 
   return NextResponse.json({
     mese: `${ym.year}-${String(ym.month).padStart(2, "0")}`,
-    dipendenti: dipendenti.map((d) => serializeDipendente(d, standard)),
+    dipendenti: dipendenti.map((d) => {
+      const standard = standardMap.get(d.categoriaId);
+      if (!standard) throw new Error(`Tariffe mancanti per ${d.categoriaId}`);
+      return serializeDipendente(d, standard);
+    }),
     presenze: presenze.map((p) => ({
       id: p.id,
       dipendenteId: p.dipendenteId,
