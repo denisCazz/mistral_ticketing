@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -15,7 +15,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { isLowStock } from "@/lib/magazzino-utils";
+import { isLowStock, looksLikeEan } from "@/lib/magazzino-utils";
 
 interface Articolo {
   id: string;
@@ -31,14 +31,11 @@ interface Articolo {
 type Phase =
   | { kind: "scanning" }
   | { kind: "found"; articolo: Articolo; code: string }
-  | {
-      kind: "unknown";
-      code: string;
-      suggestedField: "ean" | "codice";
-    };
+  | { kind: "unknown"; code: string };
 
 export default function MagazzinoScansionePage() {
   const router = useRouter();
+  const panelRef = useRef<HTMLDivElement>(null);
   const [phase, setPhase] = useState<Phase>({ kind: "scanning" });
   const [qty, setQty] = useState("1");
   const [busy, setBusy] = useState(false);
@@ -46,8 +43,15 @@ export default function MagazzinoScansionePage() {
     nome: "",
     codice: "",
     ean: "",
-    quantita: "0",
+    quantita: "1",
+    ubicazione: "",
   });
+
+  useEffect(() => {
+    if (phase.kind === "unknown" || phase.kind === "found") {
+      panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [phase.kind]);
 
   async function handleScan(code: string) {
     setBusy(true);
@@ -59,19 +63,23 @@ export default function MagazzinoScansionePage() {
         return;
       }
       if (data.found) {
-        setPhase({ kind: "found", articolo: data.articolo, code });
+        setPhase({ kind: "found", articolo: data.articolo, code: data.code });
         setQty("1");
+        toast.success("Articolo riconosciuto");
       } else {
-        setPhase({
-          kind: "unknown",
-          code: data.code,
-          suggestedField: data.suggestedField,
-        });
+        const scanned = String(data.code ?? code);
+        const isEan = looksLikeEan(scanned);
+        setPhase({ kind: "unknown", code: scanned });
         setCreateForm({
           nome: "",
-          codice: data.suggestedField === "codice" ? data.code : "",
-          ean: data.suggestedField === "ean" ? data.code : "",
-          quantita: "0",
+          // Sempre un codice interno: se è EAN lo usiamo anche come codice
+          codice: scanned,
+          ean: isEan ? scanned : "",
+          quantita: "1",
+          ubicazione: "",
+        });
+        toast.message("Codice non in magazzino", {
+          description: "Compila il nome e crea l'articolo.",
         });
       }
     } finally {
@@ -118,16 +126,27 @@ export default function MagazzinoScansionePage() {
   async function createFromScan(e: React.FormEvent) {
     e.preventDefault();
     if (phase.kind !== "unknown") return;
+    const nome = createForm.nome.trim();
+    const codice = (createForm.codice || phase.code).trim();
+    if (!nome) {
+      toast.error("Inserisci il nome dell'articolo");
+      return;
+    }
+    if (!codice) {
+      toast.error("Codice mancante");
+      return;
+    }
     setBusy(true);
     try {
       const res = await fetch("/api/magazzino", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          codice: createForm.codice || phase.code,
-          ean: createForm.ean || null,
-          nome: createForm.nome,
+          codice,
+          ean: createForm.ean.trim() || null,
+          nome,
           quantita: Number(createForm.quantita) || 0,
+          ubicazione: createForm.ubicazione.trim() || null,
         }),
       });
       const data = await res.json();
@@ -135,7 +154,7 @@ export default function MagazzinoScansionePage() {
         toast.error(typeof data.error === "string" ? data.error : "Errore creazione");
         return;
       }
-      toast.success("Articolo creato");
+      toast.success("Articolo creato — puoi fare entrata/uscita");
       setPhase({ kind: "found", articolo: data, code: phase.code });
       setQty("1");
     } finally {
@@ -150,7 +169,7 @@ export default function MagazzinoScansionePage() {
   const paused = phase.kind !== "scanning";
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 max-w-xl mx-auto">
+    <div className="p-4 sm:p-6 space-y-4 max-w-xl mx-auto pb-28">
       <div className="flex items-center gap-3">
         <Link
           href="/magazzino"
@@ -161,18 +180,32 @@ export default function MagazzinoScansionePage() {
         </Link>
         <div>
           <h1 className="text-xl font-bold text-gray-900">Scansione</h1>
-          <p className="text-sm text-gray-500">QR etichetta o barcode EAN</p>
+          <p className="text-sm text-gray-500">
+            QR / EAN · se non riconosciuto puoi creare l&apos;articolo
+          </p>
         </div>
       </div>
 
       <BarcodeScanner
         onScan={(code) => void handleScan(code)}
         paused={paused || busy}
-        className="aspect-[3/4] sm:aspect-video w-full"
+        className={cn(
+          "w-full transition-all",
+          paused ? "aspect-video max-h-48 sm:max-h-56" : "aspect-[3/4] sm:aspect-video"
+        )}
       />
 
+      {phase.kind === "scanning" && (
+        <p className="text-center text-sm text-gray-500">
+          Inquadra un codice. Se è nuovo, apparirà il form di creazione.
+        </p>
+      )}
+
       {phase.kind === "found" && (
-        <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 space-y-4">
+        <div
+          ref={panelRef}
+          className="rounded-xl border border-sky-200 bg-sky-50 p-4 space-y-4"
+        >
           <div>
             <p className="text-xs text-sky-700 font-medium uppercase tracking-wide">
               Articolo trovato
@@ -246,32 +279,37 @@ export default function MagazzinoScansionePage() {
       )}
 
       {phase.kind === "unknown" && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-4">
+        <div
+          ref={panelRef}
+          className="rounded-xl border-2 border-amber-400 bg-amber-50 p-4 space-y-4 shadow-sm"
+        >
           <div className="flex items-start gap-2">
-            <PackagePlus className="h-5 w-5 text-amber-700 mt-0.5" />
+            <PackagePlus className="h-5 w-5 text-amber-700 mt-0.5 shrink-0" />
             <div>
-              <h2 className="font-semibold text-gray-900">Codice sconosciuto</h2>
+              <h2 className="font-semibold text-gray-900">Nuovo articolo</h2>
               <p className="text-sm text-gray-600 mt-0.5">
-                <span className="font-mono">{phase.code}</span> non è in magazzino.
-                Crealo subito.
+                Codice <span className="font-mono font-medium">{phase.code}</span> non
+                riconosciuto. Inserisci almeno il nome e salva.
               </p>
             </div>
           </div>
 
           <form onSubmit={createFromScan} className="space-y-3">
             <div className="space-y-1.5">
-              <Label htmlFor="new-nome">Nome *</Label>
+              <Label htmlFor="new-nome">Nome articolo *</Label>
               <Input
                 id="new-nome"
                 required
+                autoFocus
                 className="bg-white"
+                placeholder="es. Interruttore magnetotermico 16A"
                 value={createForm.nome}
                 onChange={(e) => setCreateForm({ ...createForm, nome: e.target.value })}
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="new-codice">Codice</Label>
+                <Label htmlFor="new-codice">Codice interno *</Label>
                 <Input
                   id="new-codice"
                   required
@@ -291,28 +329,43 @@ export default function MagazzinoScansionePage() {
                 />
               </div>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="new-qty">Giacenza iniziale</Label>
-              <Input
-                id="new-qty"
-                type="number"
-                min="0"
-                step="any"
-                className="bg-white"
-                value={createForm.quantita}
-                onChange={(e) => setCreateForm({ ...createForm, quantita: e.target.value })}
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="new-qty">Giacenza iniziale</Label>
+                <Input
+                  id="new-qty"
+                  type="number"
+                  min="0"
+                  step="any"
+                  className="bg-white"
+                  value={createForm.quantita}
+                  onChange={(e) => setCreateForm({ ...createForm, quantita: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="new-ubi">Ubicazione</Label>
+                <Input
+                  id="new-ubi"
+                  className="bg-white"
+                  placeholder="Scaffale…"
+                  value={createForm.ubicazione}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, ubicazione: e.target.value })
+                  }
+                />
+              </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 pt-1">
               <Button type="button" variant="outline" className="flex-1" onClick={resumeScan}>
                 Annulla
               </Button>
               <Button
                 type="submit"
                 disabled={busy}
-                className="flex-1 bg-sky-700 hover:bg-sky-800"
+                className="flex-1 bg-sky-700 hover:bg-sky-800 h-11"
               >
-                Crea articolo
+                <PackagePlus className="h-4 w-4 mr-2" />
+                {busy ? "Creazione…" : "Crea articolo"}
               </Button>
             </div>
           </form>
