@@ -15,6 +15,11 @@ import {
   BarChart3,
   Menu,
   ClipboardList,
+  FolderOpen,
+  CalendarClock,
+  IdCard,
+  Coins,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -25,12 +30,22 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 
+const RAPPORTINI_ENABLED =
+  process.env.NEXT_PUBLIC_RAPPORTINI_ENABLED === "true";
+
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, roles: ["ADMIN", "OPERATORE"] },
-  { href: "/pratiche", label: "Pratiche", icon: FileText, roles: ["ADMIN", "OPERATORE"] },
-  { href: "/rapportini", label: "Rapportini", icon: ClipboardList, roles: ["ADMIN", "OPERATORE"] },
+  { href: "/preventivi", label: "Preventivi", icon: FileText, roles: ["ADMIN", "OPERATORE"] },
+  ...(RAPPORTINI_ENABLED
+    ? [{ href: "/rapportini", label: "Rapportini", icon: ClipboardList, roles: ["ADMIN", "OPERATORE"] }]
+    : []),
+  { href: "/documenti", label: "Documenti", icon: FolderOpen, roles: ["ADMIN", "OPERATORE"] },
+  { href: "/scadenze", label: "Scadenze", icon: CalendarClock, roles: ["ADMIN", "OPERATORE"] },
   { href: "/statistiche", label: "Statistiche", icon: BarChart3, roles: ["ADMIN", "OPERATORE"] },
   { href: "/clienti", label: "Clienti", icon: Users, roles: ["ADMIN", "OPERATORE"] },
+  { href: "/dipendenti", label: "Dipendenti", icon: IdCard, roles: ["ADMIN"] },
+  { href: "/costi", label: "Costi", icon: Coins, roles: ["ADMIN"] },
+  { href: "/configurazione", label: "Configurazione", icon: Settings, roles: ["ADMIN"] },
   { href: "/admin/utenti", label: "Utenti", icon: UserCog, roles: ["ADMIN"] },
   { href: "/import", label: "Importa XLSX", icon: Upload, roles: ["ADMIN"] },
 ];

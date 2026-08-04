@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { RAPPORTINI_ENABLED } from "@/lib/config";
 import { prisma } from "@/lib/db";
 import { toDateOnlyString } from "@/types/rapportino";
 
@@ -27,6 +28,9 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  if (!RAPPORTINI_ENABLED) {
+    return NextResponse.json({ error: "Rapportini disabilitati" }, { status: 403 });
+  }
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -38,7 +42,6 @@ export async function GET(
     include: {
       cliente: true,
       utente: { select: { id: true, name: true, email: true, qualifica: true } },
-      pratica: { select: { id: true, numeroPratica: true } },
     },
   });
 
@@ -57,6 +60,9 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  if (!RAPPORTINI_ENABLED) {
+    return NextResponse.json({ error: "Rapportini disabilitati" }, { status: 403 });
+  }
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

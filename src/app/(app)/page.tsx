@@ -3,24 +3,26 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { StatoBadge } from "@/components/stato-badge";
-import { STATO_LABELS } from "@/lib/constants";
-import { StatoPratica } from "@prisma/client";
-import { Users, FileText, Wrench, ClipboardList } from "lucide-react";
+import { PreventivoStatoBadge } from "@/components/preventivo-stato-badge";
+import { STATO_PREVENTIVO_LABELS } from "@/lib/preventivo-constants";
+import { StatoPreventivo } from "@prisma/client";
+import { Users, FileText, CalendarClock, AlertTriangle } from "lucide-react";
 import { useSession } from "next-auth/react";
 
 interface DashboardData {
-  perStato: { stato: StatoPratica; _count: { stato: number } }[];
-  pratiche: {
+  perStato: { stato: StatoPreventivo; _count: { stato: number } }[];
+  preventivi: {
     id: string;
-    numeroPratica: string;
-    stato: StatoPratica;
-    createdAt: string;
+    numeroPreventivo: string;
+    stato: StatoPreventivo;
+    totaleFinale: string | null;
+    updatedAt: string;
     cliente: { id: string; ragioneSociale: string };
     operatore: { id: string; name: string };
   }[];
   totaleClienti: number;
-  totaleRapportini: number;
+  scadenzeProssime: number;
+  scadenzeUrgenti: number;
 }
 
 export default function DashboardPage() {
@@ -30,31 +32,35 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetch("/api/dashboard")
-      .then((r) => r.json())
-      .then(setData);
+      .then((r) => {
+        if (!r.ok) throw new Error("Dashboard API error");
+        return r.json();
+      })
+      .then(setData)
+      .catch(() => setData(null));
   }, []);
 
   if (!data) {
     return (
-      <div className="p-8 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-700" />
+      <div className="p-8 flex flex-col items-center justify-center gap-3 text-center">
+        <p className="text-gray-600">Impossibile caricare la dashboard.</p>
+        <p className="text-sm text-gray-500">
+          Verifica che il database sia migrato: <code className="text-xs">npm run db:push</code>
+        </p>
       </div>
     );
   }
 
-  const totalePratiche = data.perStato.reduce((s, x) => s + x._count.stato, 0);
-  const aperte = data.perStato
-    .filter((x) => !["COMPLETATA", "ANNULLATA", "NON_RISOLVIBILE"].includes(x.stato))
-    .reduce((s, x) => s + x._count.stato, 0);
+  const totalePreventivi = data.perStato.reduce((s, x) => s + x._count.stato, 0);
+  const bozze = data.perStato.find((x) => x.stato === "BOZZA")?._count.stato ?? 0;
 
   return (
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-sm text-gray-500 mt-1">Pratiche e rapportini — Mistral Impianti</p>
+        <p className="text-sm text-gray-500 mt-1">Preventivi, documenti e scadenze</p>
       </div>
 
-      {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {isAdmin && (
           <Card>
@@ -75,8 +81,8 @@ export default function DashboardPage() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">Pratiche totali</p>
-                <p className="text-3xl font-bold text-gray-900 mt-1">{totalePratiche}</p>
+                <p className="text-sm text-gray-500">Preventivi</p>
+                <p className="text-3xl font-bold text-gray-900 mt-1">{totalePreventivi}</p>
               </div>
               <div className="bg-sky-100 p-3 rounded-full">
                 <FileText className="h-6 w-6 text-sky-700" />
@@ -86,80 +92,79 @@ export default function DashboardPage() {
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
+            <Link href="/scadenze" className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">Pratiche aperte</p>
-                <p className="text-3xl font-bold text-gray-900 mt-1">{aperte}</p>
+                <p className="text-sm text-gray-500">Scadenze 30gg</p>
+                <p className="text-3xl font-bold text-gray-900 mt-1">{data.scadenzeProssime}</p>
               </div>
-              <div className="bg-yellow-100 p-3 rounded-full">
-                <Wrench className="h-6 w-6 text-yellow-600" />
+              <div className="bg-amber-100 p-3 rounded-full">
+                <CalendarClock className="h-6 w-6 text-amber-700" />
               </div>
-            </div>
+            </Link>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <Link href="/rapportini" className="flex items-center justify-between">
+            <Link href="/scadenze" className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">Rapportini</p>
-                <p className="text-3xl font-bold text-gray-900 mt-1">{data.totaleRapportini ?? 0}</p>
+                <p className="text-sm text-gray-500">Urgenti ≤7gg</p>
+                <p className="text-3xl font-bold text-red-600 mt-1">{data.scadenzeUrgenti}</p>
               </div>
-              <div className="bg-emerald-100 p-3 rounded-full">
-                <ClipboardList className="h-6 w-6 text-emerald-700" />
+              <div className="bg-red-100 p-3 rounded-full">
+                <AlertTriangle className="h-6 w-6 text-red-600" />
               </div>
             </Link>
           </CardContent>
         </Card>
       </div>
 
-      {/* Per stato */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Pratiche per stato</CardTitle>
+          <CardTitle className="text-base">Preventivi per stato</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {data.perStato.map((s) => (
               <Link
                 key={s.stato}
-                href={`/pratiche?stato=${s.stato}`}
-                className="flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:border-orange-200 hover:bg-orange-50 transition-colors"
+                href={`/preventivi?stato=${s.stato}`}
+                className="flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:border-sky-200 hover:bg-sky-50 transition-colors"
               >
-                <span className="text-xs text-gray-600">{STATO_LABELS[s.stato]}</span>
+                <span className="text-xs text-gray-600">{STATO_PREVENTIVO_LABELS[s.stato]}</span>
                 <span className="text-lg font-bold text-gray-900">{s._count.stato}</span>
               </Link>
             ))}
           </div>
+          <p className="text-sm text-gray-500 mt-3">Bozze attive: {bozze}</p>
         </CardContent>
       </Card>
 
-      {/* Ultime pratiche */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Ultime pratiche aggiornate</CardTitle>
+          <CardTitle className="text-base">Ultimi preventivi</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="divide-y divide-gray-100">
-            {data.pratiche.map((p) => (
+            {data.preventivi.map((p) => (
               <Link
                 key={p.id}
-                href={`/pratiche/${p.id}`}
+                href={`/preventivi/${p.id}`}
                 className="flex items-center justify-between py-3 hover:bg-gray-50 px-2 rounded-lg transition-colors"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-gray-900">{p.numeroPratica}</p>
+                  <p className="text-sm font-medium text-gray-900">{p.numeroPreventivo}</p>
                   <p className="text-xs text-gray-500 truncate">{p.cliente.ragioneSociale}</p>
                 </div>
                 <div className="ml-4 flex items-center gap-3">
-                  <StatoBadge stato={p.stato} />
-                  <span className="text-xs text-gray-400 hidden sm:block">
-                    {new Date(p.createdAt).toLocaleDateString("it-IT")}
+                  <PreventivoStatoBadge stato={p.stato} />
+                  <span className="text-xs text-gray-500">
+                    € {Number(p.totaleFinale ?? 0).toFixed(2)}
                   </span>
                 </div>
               </Link>
             ))}
-            {data.pratiche.length === 0 && (
-              <p className="text-sm text-gray-500 py-4 text-center">Nessuna pratica ancora</p>
+            {data.preventivi.length === 0 && (
+              <p className="text-sm text-gray-500 py-4 text-center">Nessun preventivo</p>
             )}
           </div>
         </CardContent>

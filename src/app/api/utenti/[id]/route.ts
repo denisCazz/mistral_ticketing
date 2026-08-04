@@ -69,8 +69,8 @@ export async function DELETE(
   }
 
   const [comeOperatore, comeStoria] = await Promise.all([
-    prisma.pratica.count({ where: { operatoreId: id } }),
-    prisma.praticaStoria.count({ where: { changedById: id } }),
+    prisma.preventivo.count({ where: { operatoreId: id } }),
+    prisma.preventivoStoria.count({ where: { changedById: id } }),
   ]);
 
   if (comeOperatore > 0 || comeStoria > 0) {

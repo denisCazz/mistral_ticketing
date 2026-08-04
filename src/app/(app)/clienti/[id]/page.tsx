@@ -5,8 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { StatoBadge } from "@/components/stato-badge";
-import { StatoPratica } from "@prisma/client";
+import { PreventivoStatoBadge } from "@/components/preventivo-stato-badge";
+import { StatoPreventivo } from "@prisma/client";
 import { ArrowLeft, Phone, MapPin, Mail, FileText, Plus } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 
@@ -25,11 +25,11 @@ interface ClienteDetail {
   note3: string | null;
   statoAnagrafica: string | null;
   motivoControllo: string | null;
-  pratiche: {
+  preventivi: {
     id: string;
-    numeroPratica: string;
-    stato: StatoPratica;
-    tipoIntervento: string | null;
+    numeroPreventivo: string;
+    stato: StatoPreventivo;
+    totaleFinale: string | null;
     createdAt: string;
     operatore: { id: string; name: string };
   }[];
@@ -43,7 +43,10 @@ export default function ClienteDetailPage() {
   useEffect(() => {
     fetch(`/api/clienti/${id}`)
       .then((r) => {
-        if (!r.ok) { router.push("/clienti"); return null; }
+        if (!r.ok) {
+          router.push("/clienti");
+          return null;
+        }
         return r.json();
       })
       .then((d) => d && setCliente(d));
@@ -62,24 +65,29 @@ export default function ClienteDetailPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <Link href="/clienti">
-            <Button variant="ghost" size="sm"><ArrowLeft className="h-4 w-4" /></Button>
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
           </Link>
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold text-gray-900 truncate">{cliente.ragioneSociale}</h1>
+            <h1 className="text-2xl font-bold text-gray-900 truncate">
+              {cliente.ragioneSociale}
+            </h1>
             {cliente.statoAnagrafica && (
-              <p className="text-sm text-gray-500 mt-1">Stato anagrafica: {cliente.statoAnagrafica}</p>
+              <p className="text-sm text-gray-500 mt-1">
+                Stato anagrafica: {cliente.statoAnagrafica}
+              </p>
             )}
           </div>
         </div>
-        <Link href={`/pratiche/nuova?clienteId=${cliente.id}`} className="shrink-0">
-          <Button className="w-full sm:w-auto bg-orange-500 hover:bg-orange-600">
-            <Plus className="h-4 w-4 mr-2" /> Nuova pratica
+        <Link href={`/preventivi/nuovo?clienteId=${cliente.id}`} className="shrink-0">
+          <Button className="w-full sm:w-auto bg-sky-700 hover:bg-sky-800">
+            <Plus className="h-4 w-4 mr-2" /> Nuovo preventivo
           </Button>
         </Link>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Anagrafica */}
         <div className="space-y-4">
           <Card>
             <CardHeader className="pb-3">
@@ -91,7 +99,10 @@ export default function ClienteDetailPage() {
                   <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-gray-400" />
                   <div>
                     <p>{cliente.indirizzo}</p>
-                    <p>{cliente.cap} {cliente.citta}{cliente.provincia ? ` (${cliente.provincia})` : ""}</p>
+                    <p>
+                      {cliente.cap} {cliente.citta}
+                      {cliente.provincia ? ` (${cliente.provincia})` : ""}
+                    </p>
                   </div>
                 </div>
               )}
@@ -117,51 +128,69 @@ export default function ClienteDetailPage() {
               {(cliente.note1 || cliente.note2 || cliente.note3) && (
                 <>
                   <Separator />
-                  {cliente.note1 && <p className="text-xs text-gray-600"><span className="font-medium">Note 1:</span> {cliente.note1}</p>}
-                  {cliente.note2 && <p className="text-xs text-gray-600"><span className="font-medium">Note 2:</span> {cliente.note2}</p>}
-                  {cliente.note3 && <p className="text-xs text-gray-600"><span className="font-medium">Note 3:</span> {cliente.note3}</p>}
+                  {cliente.note1 && (
+                    <p className="text-xs text-gray-600">
+                      <span className="font-medium">Note 1:</span> {cliente.note1}
+                    </p>
+                  )}
+                  {cliente.note2 && (
+                    <p className="text-xs text-gray-600">
+                      <span className="font-medium">Note 2:</span> {cliente.note2}
+                    </p>
+                  )}
+                  {cliente.note3 && (
+                    <p className="text-xs text-gray-600">
+                      <span className="font-medium">Note 3:</span> {cliente.note3}
+                    </p>
+                  )}
                 </>
               )}
 
               {cliente.motivoControllo && (
                 <>
                   <Separator />
-                  <p className="text-xs text-gray-600"><span className="font-medium">Motivo controllo:</span> {cliente.motivoControllo}</p>
+                  <p className="text-xs text-gray-600">
+                    <span className="font-medium">Motivo controllo:</span>{" "}
+                    {cliente.motivoControllo}
+                  </p>
                 </>
               )}
             </CardContent>
           </Card>
         </div>
 
-        {/* Pratiche */}
         <div className="lg:col-span-2">
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <FileText className="h-4 w-4" />
-                Pratiche ({cliente.pratiche.length})
+                Preventivi ({cliente.preventivi.length})
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {cliente.pratiche.length === 0 ? (
-                <p className="text-sm text-gray-500 py-4 text-center">Nessuna pratica per questo cliente</p>
+              {cliente.preventivi.length === 0 ? (
+                <p className="text-sm text-gray-500 py-4 text-center">
+                  Nessun preventivo per questo cliente
+                </p>
               ) : (
                 <div className="divide-y divide-gray-100">
-                  {cliente.pratiche.map((p) => (
+                  {cliente.preventivi.map((p) => (
                     <Link
                       key={p.id}
-                      href={`/pratiche/${p.id}`}
+                      href={`/preventivi/${p.id}`}
                       className="flex items-center justify-between py-3 hover:bg-gray-50 px-2 rounded-lg transition-colors"
                     >
                       <div>
-                        <p className="text-sm font-medium font-mono text-orange-600">{p.numeroPratica}</p>
-                        <p className="text-xs text-gray-500">
-                          {p.tipoIntervento ?? "—"} · {p.operatore.name}
+                        <p className="text-sm font-medium font-mono text-sky-700">
+                          {p.numeroPreventivo}
                         </p>
+                        <p className="text-xs text-gray-500">{p.operatore.name}</p>
                       </div>
                       <div className="flex items-center gap-3">
-                        <StatoBadge stato={p.stato} />
-                        <span className="text-xs text-gray-400">{new Date(p.createdAt).toLocaleDateString("it-IT")}</span>
+                        <PreventivoStatoBadge stato={p.stato} />
+                        <span className="text-xs text-gray-400">
+                          € {Number(p.totaleFinale ?? 0).toFixed(2)}
+                        </span>
                       </div>
                     </Link>
                   ))}

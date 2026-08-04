@@ -3,9 +3,10 @@ import Credentials from "next-auth/providers/credentials";
 import { prisma } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { normalizeLoginIdentifier } from "@/lib/dipendente-user";
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  email: z.string().min(1),
   password: z.string().min(1),
 });
 
@@ -59,7 +60,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           const parsed = loginSchema.safeParse(credentials);
           if (!parsed.success) return null;
 
-          const { email, password } = parsed.data;
+          const { email: rawEmail, password } = parsed.data;
+          const email = normalizeLoginIdentifier(rawEmail);
 
           const user = await prisma.user.findUnique({
             where: { email },

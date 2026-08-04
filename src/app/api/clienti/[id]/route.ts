@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { praticaWhereForSession } from "@/lib/access";
+import { preventivoWhereForSession } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
 
@@ -30,8 +30,8 @@ export async function GET(
   const cliente = await prisma.cliente.findUnique({
     where: { id },
     include: {
-      pratiche: {
-        where: praticaWhereForSession(session),
+      preventivi: {
+        where: preventivoWhereForSession(session),
         orderBy: { createdAt: "desc" },
         include: {
           operatore: { select: { id: true, name: true } },

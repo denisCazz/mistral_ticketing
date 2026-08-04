@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { RAPPORTINI_ENABLED } from "@/lib/config";
 import { prisma } from "@/lib/db";
 import { SETTORE_VALUES, TIPO_IMPIANTO_BY_SETTORE } from "@/lib/rapportino-constants";
 import { toDateOnlyString } from "@/types/rapportino";
@@ -12,7 +13,6 @@ const allTipiImpianto = [
 
 const createSchema = z.object({
   clienteId: z.string().min(1),
-  praticaId: z.string().optional().nullable(),
   dataRichiesta: z.string().optional().nullable(),
   dataIntervento: z.string().min(1),
   oraIntervento: z.string().optional().nullable(),
@@ -50,7 +50,6 @@ function mapRapportino(r: {
   id: string;
   utenteId: string;
   clienteId: string;
-  praticaId: string | null;
   dataRichiesta: Date | null;
   dataIntervento: Date;
   oraIntervento: string | null;
@@ -86,7 +85,6 @@ function mapRapportino(r: {
   updatedAt: Date;
   cliente?: unknown;
   utente?: unknown;
-  pratica?: unknown;
 }) {
   return {
     ...r,
@@ -106,6 +104,9 @@ function parseOptionalDate(value: string | null | undefined) {
 }
 
 export async function GET(request: NextRequest) {
+  if (!RAPPORTINI_ENABLED) {
+    return NextResponse.json({ error: "Rapportini disabilitati" }, { status: 403 });
+  }
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -157,7 +158,6 @@ export async function GET(request: NextRequest) {
           },
         },
         utente: { select: { id: true, name: true, email: true, qualifica: true } },
-        pratica: { select: { id: true, numeroPratica: true } },
       },
     }),
   ]);
@@ -172,6 +172,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  if (!RAPPORTINI_ENABLED) {
+    return NextResponse.json({ error: "Rapportini disabilitati" }, { status: 403 });
+  }
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -200,18 +203,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Cliente non trovato" }, { status: 404 });
   }
 
-  if (data.praticaId) {
-    const pratica = await prisma.pratica.findUnique({ where: { id: data.praticaId } });
-    if (!pratica) {
-      return NextResponse.json({ error: "Pratica non trovata" }, { status: 404 });
-    }
-  }
-
   const created = await prisma.rapportino.create({
     data: {
       utenteId: session.user.id,
       clienteId: data.clienteId,
-      praticaId: data.praticaId || null,
       dataRichiesta: parseOptionalDate(data.dataRichiesta),
       dataIntervento: new Date(data.dataIntervento),
       oraIntervento: data.oraIntervento || null,
@@ -247,7 +242,6 @@ export async function POST(request: NextRequest) {
     include: {
       cliente: true,
       utente: { select: { id: true, name: true, email: true, qualifica: true } },
-      pratica: { select: { id: true, numeroPratica: true } },
     },
   });
 

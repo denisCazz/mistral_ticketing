@@ -25,7 +25,7 @@ interface Cliente {
   email: string | null;
   indirizzo: string | null;
   cap: string | null;
-  _count: { pratiche: number };
+  _count: { preventivi: number };
 }
 
 interface ClienteForm {
@@ -219,7 +219,7 @@ function ClientiContent() {
                   </td>
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-                      {c._count.pratiche} pratiche
+                      {c._count.preventivi} preventivi
                     </span>
                   </td>
                   <td className="px-4 py-3">

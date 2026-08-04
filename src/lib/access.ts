@@ -1,17 +1,18 @@
 import type { Session } from "next-auth";
-import type { StatoPratica } from "@prisma/client";
-import { statiConsentitiPerUtente, statiTargetDisponibili } from "@/lib/constants";
+import type { StatoPreventivo } from "@prisma/client";
+import {
+  statiPreventivoConsentiti,
+  statiPreventivoTarget,
+} from "@/lib/preventivo-constants";
 
-type PraticaAccess = {
+type PreventivoAccess = {
   operatoreId: string;
 };
 
-/** Filtro Prisma per le pratiche visibili all'utente della sessione. */
-export function praticaWhereForSession(
+export function preventivoWhereForSession(
   session: Session | null
 ): Record<string, unknown> {
   if (!session?.user?.id || !session.user.role) return { id: "__none__" };
-
   if (session.user.role === "ADMIN") return {};
   if (session.user.role === "OPERATORE") {
     return { operatoreId: session.user.id };
@@ -19,41 +20,40 @@ export function praticaWhereForSession(
   return { id: "__none__" };
 }
 
-export function canSetStato(
+export function canSetStatoPreventivo(
   session: Session | null,
-  stato: StatoPratica,
-  statoCorrente?: StatoPratica
+  stato: StatoPreventivo,
+  statoCorrente?: StatoPreventivo
 ): boolean {
   if (!statoCorrente) {
-    return statiConsentitiPerUtente(session?.user?.role).includes(stato);
+    return statiPreventivoConsentiti(session?.user?.role).includes(stato);
   }
-  return statiTargetDisponibili(
-    session?.user?.role,
-    statoCorrente
-  ).includes(stato);
+  return statiPreventivoTarget(session?.user?.role, statoCorrente).includes(
+    stato
+  );
 }
 
-export function canManageStati(session: Session | null): boolean {
+export function canManageStatiPreventivo(session: Session | null): boolean {
   if (!session?.user?.role) return false;
-  return statiConsentitiPerUtente(session.user.role).length > 0;
+  return statiPreventivoConsentiti(session.user.role).length > 0;
 }
 
-/** Solo admin può assegnare/riassegnare l'operatore di una pratica. */
 export function canAssignOperatore(session: Session | null): boolean {
   return session?.user?.role === "ADMIN";
 }
 
-export function canAccessPratica(
+export function canAccessPreventivo(
   session: Session | null,
-  pratica: PraticaAccess
+  preventivo: PreventivoAccess
 ): boolean {
   if (!session?.user?.id || !session.user.role) return false;
-
   if (session.user.role === "ADMIN") return true;
-
   if (session.user.role === "OPERATORE") {
-    return pratica.operatoreId === session.user.id;
+    return preventivo.operatoreId === session.user.id;
   }
-
   return false;
+}
+
+export function canAccessDocumentiHr(session: Session | null): boolean {
+  return session?.user?.role === "ADMIN";
 }

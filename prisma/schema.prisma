@@ -11,13 +11,54 @@ enum Role {
   OPERATORE
 }
 
-enum StatoPratica {
-  RICEVUTA
-  PRESA_IN_CARICO
-  IN_ATTESA_RICAMBI
-  COMPLETATA
-  ANNULLATA
-  NON_RISOLVIBILE
+enum StatoPreventivo {
+  BOZZA
+  IN_REVISIONE
+  INVIATO
+  ACCETTATO
+  RIFIUTATO
+  SCADUTO
+}
+
+enum EntityType {
+  DIPENDENTE
+  AUTOMEZZO
+  AZIENDA
+}
+
+enum StatoValidita {
+  VALIDO
+  SCADUTO
+  ARCHIVIATO
+  DA_REVISIONARE
+}
+
+enum StatoIngestione {
+  PENDING
+  READY
+  FAILED
+  DA_REVISIONARE
+}
+
+enum FonteScadenza {
+  FILENAME
+  OCR
+  MANUALE
+  FOLDER
+}
+
+enum ExportFormato {
+  PDF
+  DOCX
+}
+
+enum TipoPresenza {
+  SEDE
+  TRASFERTA
+  MUTUA
+  PERMESSO
+  FERIE
+  FESTIVO
 }
 
 model User {
@@ -32,9 +73,14 @@ model User {
   telefono     String?
   createdAt    DateTime @default(now())
 
-  praticheComeOperatore Pratica[]       @relation("OperatoreRelation")
-  cambiamentiStato      PraticaStoria[]
-  rapportini            Rapportino[]
+  preventiviComeOperatore Preventivo[]        @relation("PreventivoOperatore")
+  cambiamentiPreventivo   PreventivoStoria[]
+  preventivoVersioni      PreventivoVersione[]
+  preventivoExports       PreventivoExport[]
+  rapportini              Rapportino[]
+  dipendente              Dipendente?
+  scadenzeResponsabile    Scadenza[]
+  aiAudits                AiGenerationAudit[]
 }
 
 model Cliente {
@@ -61,7 +107,7 @@ model Cliente {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  pratiche   Pratica[]
+  preventivi Preventivo[]
   rapportini Rapportino[]
 
   @@index([ragioneSociale])
@@ -70,42 +116,291 @@ model Cliente {
   @@index([cognome])
 }
 
-model Pratica {
-  id             String       @id @default(cuid())
-  numeroPratica  String       @unique
-  clienteId      String
-  tipoIntervento String?
-  descrizione    String?
-  stato          StatoPratica @default(RICEVUTA)
-  /// Operatore a cui è assegnata la pratica (visibilità: admin vede tutte, operatore solo le sue)
-  operatoreId    String
-  noteInterne    String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+model Preventivo {
+  id              String          @id @default(cuid())
+  numeroPreventivo String         @unique
+  clienteId       String
+  operatoreId     String
+  stato           StatoPreventivo @default(BOZZA)
+  introduzione    String?
+  condizioni      String?
+  validoFino      DateTime?       @db.Date
+  versione        Int             @default(1)
+  noteInterne     String?
+  totaleImponibile Decimal?       @db.Decimal(12, 2)
+  totaleIva        Decimal?       @db.Decimal(12, 2)
+  totaleFinale     Decimal?       @db.Decimal(12, 2)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
-  cliente    Cliente         @relation(fields: [clienteId], references: [id])
-  operatore  User            @relation("OperatoreRelation", fields: [operatoreId], references: [id])
-  storia     PraticaStoria[]
-  rapportini Rapportino[]
+  cliente   Cliente              @relation(fields: [clienteId], references: [id])
+  operatore User                 @relation("PreventivoOperatore", fields: [operatoreId], references: [id])
+  righe     PreventivoRiga[]
+  versioni  PreventivoVersione[]
+  storia    PreventivoStoria[]
+  exports   PreventivoExport[]
+  scadenze  Scadenza[]
 
   @@index([stato])
   @@index([clienteId])
   @@index([operatoreId])
+  @@index([validoFino])
 }
 
-model PraticaStoria {
-  id          String        @id @default(cuid())
-  praticaId   String
-  statoDa     StatoPratica?
-  statoA      StatoPratica
+model PreventivoRiga {
+  id                String   @id @default(cuid())
+  preventivoId      String
+  ordine            Int      @default(0)
+  descrizione       String
+  quantita          Decimal  @default(1) @db.Decimal(12, 3)
+  prezzoUnitario    Decimal  @default(0) @db.Decimal(12, 2)
+  scontoPercentuale Decimal  @default(0) @db.Decimal(5, 2)
+  aliquotaIva       Decimal  @default(22) @db.Decimal(5, 2)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  preventivo Preventivo @relation(fields: [preventivoId], references: [id], onDelete: Cascade)
+
+  @@index([preventivoId])
+}
+
+model PreventivoVersione {
+  id             String   @id @default(cuid())
+  preventivoId   String
+  numeroVersione Int
+  snapshotJson   Json
+  createdById    String
+  createdAt      DateTime @default(now())
+  motivo         String?
+
+  preventivo Preventivo         @relation(fields: [preventivoId], references: [id], onDelete: Cascade)
+  createdBy  User                 @relation(fields: [createdById], references: [id])
+  exports    PreventivoExport[]
+
+  @@unique([preventivoId, numeroVersione])
+  @@index([preventivoId])
+}
+
+model PreventivoStoria {
+  id          String           @id @default(cuid())
+  preventivoId String
+  statoDa     StatoPreventivo?
+  statoA      StatoPreventivo
   changedById String
-  changedAt   DateTime      @default(now())
+  changedAt   DateTime         @default(now())
   note        String?
 
-  pratica   Pratica @relation(fields: [praticaId], references: [id], onDelete: Cascade)
-  changedBy User    @relation(fields: [changedById], references: [id])
+  preventivo Preventivo @relation(fields: [preventivoId], references: [id], onDelete: Cascade)
+  changedBy  User       @relation(fields: [changedById], references: [id])
 
-  @@index([praticaId])
+  @@index([preventivoId])
+}
+
+model PreventivoExport {
+  id           String        @id @default(cuid())
+  preventivoId String
+  versioneId   String?
+  formato      ExportFormato
+  storageKey   String
+  mimeType     String
+  sizeBytes    Int?
+  createdById  String
+  createdAt    DateTime      @default(now())
+
+  preventivo Preventivo          @relation(fields: [preventivoId], references: [id], onDelete: Cascade)
+  versione   PreventivoVersione? @relation(fields: [versioneId], references: [id], onDelete: SetNull)
+  createdBy  User                @relation(fields: [createdById], references: [id])
+
+  @@index([preventivoId])
+}
+
+model Dipendente {
+  id                 String   @id @default(cuid())
+  nome               String
+  cognome            String
+  codiceFiscale      String?  @unique
+  active             Boolean  @default(true)
+  archiviato         Boolean  @default(false)
+  userId             String?  @unique
+  /// Costo giornata lavorativa in sede
+  costoGiornata      Decimal  @default(0) @db.Decimal(12, 2)
+  /// Indennità aggiuntiva per giorno di trasferta
+  indennitaTrasferta Decimal  @default(0) @db.Decimal(12, 2)
+  costoMutua         Decimal  @default(0) @db.Decimal(12, 2)
+  costoPermesso      Decimal  @default(0) @db.Decimal(12, 2)
+  costoFerie         Decimal  @default(0) @db.Decimal(12, 2)
+  costoFestivo       Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user       User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  documenti  Documento[]
+  scadenze   Scadenza[]
+  presenze   PresenzaGiorno[]
+
+  @@index([cognome, nome])
+}
+
+model PresenzaGiorno {
+  id           String       @id @default(cuid())
+  dipendenteId String
+  data         DateTime     @db.Date
+  tipo         TipoPresenza
+  note         String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  dipendente Dipendente @relation(fields: [dipendenteId], references: [id], onDelete: Cascade)
+
+  @@unique([dipendenteId, data])
+  @@index([data])
+  @@index([dipendenteId])
+}
+
+model Automezzo {
+  id          String   @id @default(cuid())
+  targa       String   @unique
+  descrizione String?
+  superato    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  documenti Documento[]
+  scadenze  Scadenza[]
+}
+
+model Documento {
+  id                   String          @id @default(cuid())
+  storageKey           String          @unique
+  sha256               String          @unique
+  mimeType             String
+  sizeBytes            Int
+  titoloOriginale      String
+  categoria            String
+  sottocategoria       String?
+  entityType           EntityType
+  dipendenteId         String?
+  automezzoId          String?
+  dataDocumento        DateTime?       @db.Date
+  dataScadenza         DateTime?       @db.Date
+  scadenzaSource       FonteScadenza?
+  scadenzaConfidence   Float?
+  scadenzaRaw          String?
+  statoValidita        StatoValidita   @default(VALIDO)
+  statoIngestione      StatoIngestione @default(PENDING)
+  aiWhitelist          Boolean         @default(false)
+  extractedText        String?
+  sourcePath           String?
+  canonicalDocumentoId String?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  dipendente         Dipendente?       @relation(fields: [dipendenteId], references: [id], onDelete: SetNull)
+  automezzo          Automezzo?        @relation(fields: [automezzoId], references: [id], onDelete: SetNull)
+  canonical          Documento?        @relation("DocumentoDuplicati", fields: [canonicalDocumentoId], references: [id], onDelete: SetNull)
+  duplicati          Documento[]       @relation("DocumentoDuplicati")
+  testi              DocumentoTesto[]
+  chunks             DocumentoChunk[]
+  scadenze           Scadenza[]
+
+  @@index([categoria])
+  @@index([entityType])
+  @@index([dipendenteId])
+  @@index([automezzoId])
+  @@index([dataScadenza])
+  @@index([aiWhitelist])
+  @@index([statoValidita])
+}
+
+model DocumentoTesto {
+  id           String   @id @default(cuid())
+  documentoId  String
+  content      String
+  pageNumber   Int?
+  createdAt    DateTime @default(now())
+
+  documento Documento @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+
+  @@index([documentoId])
+}
+
+model DocumentoChunk {
+  id          String   @id @default(cuid())
+  documentoId String
+  content     String
+  embedding   Json?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  documento Documento @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+
+  @@index([documentoId])
+}
+
+model Scadenza {
+  id             String         @id @default(cuid())
+  documentoId    String?
+  dipendenteId   String?
+  automezzoId    String?
+  preventivoId   String?
+  titolo         String
+  descrizione    String?
+  dataScadenza   DateTime       @db.Date
+  confermata     Boolean        @default(false)
+  fonte          FonteScadenza
+  confidence     Float?
+  rawValue       String?
+  responsabileId String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  documento    Documento?    @relation(fields: [documentoId], references: [id], onDelete: SetNull)
+  dipendente   Dipendente?   @relation(fields: [dipendenteId], references: [id], onDelete: SetNull)
+  automezzo    Automezzo?    @relation(fields: [automezzoId], references: [id], onDelete: SetNull)
+  preventivo   Preventivo?   @relation(fields: [preventivoId], references: [id], onDelete: SetNull)
+  responsabile User?         @relation(fields: [responsabileId], references: [id], onDelete: SetNull)
+  alerts       AlertScadenza[]
+
+  @@index([dataScadenza])
+  @@index([confermata])
+  @@index([documentoId])
+}
+
+model AlertScadenza {
+  id           String   @id @default(cuid())
+  scadenzaId   String
+  giorniPrima  Int
+  inviatoAt    DateTime @default(now())
+  destinatari  String[]
+  success      Boolean  @default(true)
+  error        String?
+
+  scadenza Scadenza @relation(fields: [scadenzaId], references: [id], onDelete: Cascade)
+
+  @@unique([scadenzaId, giorniPrima, inviatoAt])
+  @@index([scadenzaId])
+}
+
+model AiGenerationAudit {
+  id                String   @id @default(cuid())
+  preventivoId      String?
+  userId            String
+  prompt            String
+  model             String
+  sources           Json
+  outputJson        Json
+  promptTokens      Int?
+  completionTokens  Int?
+  embeddingTokens   Int?
+  totalTokens       Int?
+  estimatedCostUsd  Decimal? @db.Decimal(12, 6)
+  createdAt         DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([preventivoId])
+  @@index([userId])
+  @@index([createdAt])
 }
 
 model XlsxDuplicato {
@@ -120,19 +415,16 @@ model XlsxDuplicato {
   @@index([risolto])
 }
 
-/// Rapportino di intervento (antincendio / elettrico)
+/// Rapportino di intervento (antincendio / elettrico) — modulo disabilitabile via env
 model Rapportino {
   id                             String    @id @default(cuid())
   utenteId                       String
   clienteId                      String
-  praticaId                      String?
   dataRichiesta                  DateTime? @db.Date
   dataIntervento                 DateTime  @db.Date
   oraIntervento                  String?
   tipologiaIntervento            String?
-  /// antincendio | elettrico
   settore                        String
-  /// es. estintore, idrante, quadro_elettrico…
   tipoImpianto                   String
   marca                          String
   modello                        String
@@ -164,25 +456,24 @@ model Rapportino {
 
   utente   User                 @relation(fields: [utenteId], references: [id], onDelete: Restrict)
   cliente  Cliente              @relation(fields: [clienteId], references: [id], onDelete: Restrict)
-  pratica  Pratica?             @relation(fields: [praticaId], references: [id], onDelete: SetNull)
   immagini RapportinoImmagine[]
 
   @@index([clienteId])
   @@index([utenteId])
-  @@index([praticaId])
   @@index([dataIntervento])
   @@index([settore])
   @@index([tipoImpianto])
+  @@index([prossimoIntervento])
 }
 
 model RapportinoImmagine {
-  id           String    @id @default(cuid())
+  id           String   @id @default(cuid())
   rapportinoId String
   storageKey   String
   mimeType     String
   sizeBytes    Int?
   caption      String?
-  createdAt    DateTime  @default(now())
+  createdAt    DateTime @default(now())
 
   rapportino Rapportino @relation(fields: [rapportinoId], references: [id], onDelete: Cascade)
 
@@ -212,15 +503,26 @@ model Modello {
 }
 
 model AziendaSettings {
-  id                   String   @id @default("default")
-  nomeAzienda          String   @default("Mistral Impianti")
-  logo                 String?
-  indirizzo            String?
-  partitaIva           String?
-  codiceFiscale        String?
-  pec                  String?
+  id                    String   @id @default("default")
+  nomeAzienda           String   @default("Mistral Impianti")
+  logo                  String?
+  indirizzo             String?
+  partitaIva            String?
+  codiceFiscale         String?
+  pec                   String?
   codiceDestinatarioSdi String?
-  telefono             String?
-  email                String?
-  updatedAt            DateTime @updatedAt
+  telefono              String?
+  email                 String?
+  /// Costi standard giornalieri (override per dipendente)
+  costoGiornata         Decimal  @default(0) @db.Decimal(12, 2)
+  indennitaTrasferta    Decimal  @default(0) @db.Decimal(12, 2)
+  costoMutua            Decimal  @default(0) @db.Decimal(12, 2)
+  costoPermesso         Decimal  @default(0) @db.Decimal(12, 2)
+  costoFerie            Decimal  @default(0) @db.Decimal(12, 2)
+  costoFestivo          Decimal  @default(0) @db.Decimal(12, 2)
+  /// Destinatari extra per alert scadenze (oltre agli admin se alertIncludiAdmin)
+  alertEmails           String[] @default([])
+  /// Se true, gli admin attivi ricevono gli alert scadenze
+  alertIncludiAdmin     Boolean  @default(true)
+  updatedAt             DateTime @updatedAt
 }

@@ -95,7 +95,7 @@ export default function UtentiPage() {
     const data = await res.json();
     toast.success(
       data.softDeleted
-        ? "Utente disattivato (collegato a pratiche)"
+        ? "Utente disattivato (collegato a preventivi)"
         : "Utente eliminato"
     );
     fetchUsers();
@@ -172,7 +172,7 @@ export default function UtentiPage() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-gray-400">
-                  L&apos;operatore vede solo le pratiche assegnate a lui.
+                  L&apos;operatore vede solo i preventivi assegnati a lui.
                 </p>
               </div>
               <div className="flex gap-3 justify-end pt-2">

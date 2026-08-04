@@ -29,7 +29,6 @@ export interface RapportinoDTO {
   id: string;
   utenteId: string;
   clienteId: string;
-  praticaId?: string | null;
   dataRichiesta?: string | null;
   dataIntervento: string;
   oraIntervento?: string | null;
@@ -65,7 +64,6 @@ export interface RapportinoDTO {
   updatedAt: string;
   cliente?: RapportinoCliente;
   utente?: RapportinoUtente;
-  pratica?: { id: string; numeroPratica: string } | null;
 }
 
 export interface AziendaSettingsDTO {

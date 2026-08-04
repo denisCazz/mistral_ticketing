@@ -1,16 +1,22 @@
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const EMAIL_FROM = process.env.EMAIL_FROM ?? "Mistral Impianti <noreply@mistralimpianti.it>";
-const APP_URL = (process.env.NEXTAUTH_URL ?? "http://localhost:3000").replace(/\/$/, "");
+const EMAIL_FROM =
+  process.env.EMAIL_FROM ?? "Mistral Impianti <noreply@mistralimpianti.it>";
+const APP_URL = (
+  process.env.NEXTAUTH_URL ?? "http://localhost:3000"
+).replace(/\/$/, "");
 
-function praticaUrl(praticaId: string): string {
-  return `${APP_URL}/pratiche/${praticaId}`;
+function preventivoUrl(id: string): string {
+  return `${APP_URL}/preventivi/${id}`;
 }
 
-function praticaButton(praticaId: string): string {
-  const url = praticaUrl(praticaId);
+function scadenzaUrl(id: string): string {
+  return `${APP_URL}/scadenze?highlight=${id}`;
+}
+
+function actionButton(url: string, label: string): string {
   return `
     <p style="margin:24px 0">
-      <a href="${url}" style="background:#0369a1;color:#fff;text-decoration:none;padding:10px 20px;border-radius:6px;display:inline-block;font-weight:bold">Apri la pratica</a>
+      <a href="${url}" style="background:#0369a1;color:#fff;text-decoration:none;padding:10px 20px;border-radius:6px;display:inline-block;font-weight:bold">${label}</a>
     </p>
     <p style="color:#888;font-size:12px">Oppure copia questo link: <a href="${url}" style="color:#0369a1">${url}</a></p>`;
 }
@@ -21,16 +27,20 @@ export interface SendEmailInput {
   html: string;
 }
 
-// Invia email via Resend HTTP API. No-op se RESEND_API_KEY manca (log warn).
-// `to` accetta uno o più destinatari (Resend supporta un array).
-export async function sendEmail({ to, subject, html }: SendEmailInput): Promise<boolean> {
+export async function sendEmail({
+  to,
+  subject,
+  html,
+}: SendEmailInput): Promise<boolean> {
   const destinatari = (Array.isArray(to) ? to : [to]).filter(Boolean);
   if (destinatari.length === 0) {
     console.warn(`[email] Nessun destinatario. Email non inviata: ${subject}`);
     return false;
   }
   if (!RESEND_API_KEY) {
-    console.warn(`[email] RESEND_API_KEY mancante. Email a ${destinatari.join(", ")} non inviata: ${subject}`);
+    console.warn(
+      `[email] RESEND_API_KEY mancante. Email a ${destinatari.join(", ")} non inviata: ${subject}`
+    );
     return false;
   }
 
@@ -56,37 +66,6 @@ export async function sendEmail({ to, subject, html }: SendEmailInput): Promise<
   }
 }
 
-interface PraticaEmailBase {
-  praticaId: string;
-  numeroPratica: string;
-  cliente: string;
-  descrizione?: string | null;
-}
-
-interface StatoCambiatoEmailData extends PraticaEmailBase {
-  destinatarioNome: string;
-  statoDa: string;
-  statoA: string;
-  changedByName: string;
-  note?: string | null;
-}
-
-interface AssegnazioneEmailData extends PraticaEmailBase {
-  stato: string;
-  assegnatoDa: string;
-  note?: string | null;
-}
-
-interface OperatoreAssegnatoEmailData extends AssegnazioneEmailData {
-  operatoreNome: string;
-}
-
-interface SollecitoEmailData extends PraticaEmailBase {
-  destinatarioNome: string;
-  stato: string;
-  note?: string | null;
-}
-
 function baseTemplate(titolo: string, corpo: string): string {
   return `
   <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;color:#111">
@@ -101,60 +80,65 @@ function baseTemplate(titolo: string, corpo: string): string {
   </div>`;
 }
 
-// Email cambio stato all'operatore.
-export function praticaStatoCambiatoEmail(d: StatoCambiatoEmailData): { subject: string; html: string } {
+export function scadenzaAlertEmail(d: {
+  destinatarioNome: string;
+  titolo: string;
+  dataScadenza: string;
+  giorniPrima: number;
+  scadenzaId: string;
+  descrizione?: string | null;
+}): { subject: string; html: string } {
+  const url = scadenzaUrl(d.scadenzaId);
   const corpo = `
     <p>Ciao <strong>${d.destinatarioNome}</strong>,</p>
-    <p>La pratica <strong>${d.numeroPratica}</strong> ha cambiato stato.</p>
+    <p>Scadenza in <strong>${d.giorniPrima}</strong> giorno/i.</p>
+    <ul>
+      <li><strong>Titolo:</strong> ${d.titolo}</li>
+      <li><strong>Data scadenza:</strong> ${d.dataScadenza}</li>
+      ${d.descrizione ? `<li><strong>Dettaglio:</strong> ${d.descrizione}</li>` : ""}
+    </ul>
+    ${actionButton(url, "Apri scadenziario")}`;
+  return {
+    subject: `[Scadenza] ${d.titolo} — ${d.giorniPrima} giorni`,
+    html: baseTemplate("Alert scadenza", corpo),
+  };
+}
+
+export function testAlertEmail(d: {
+  destinatarioNome: string;
+}): { subject: string; html: string } {
+  const url = `${APP_URL}/configurazione`;
+  const corpo = `
+    <p>Ciao <strong>${d.destinatarioNome}</strong>,</p>
+    <p>Questa è una <strong>email di test</strong> per verificare la configurazione degli alert scadenze.</p>
+    <p>Se la ricevi, i destinatari e Resend sono configurati correttamente.</p>
+    ${actionButton(url, "Apri configurazione")}`;
+  return {
+    subject: "[Test] Alert scadenze — Mistral Impianti",
+    html: baseTemplate("Test alert scadenze", corpo),
+  };
+}
+
+export function preventivoStatoEmail(d: {
+  destinatarioNome: string;
+  numeroPreventivo: string;
+  cliente: string;
+  statoDa: string;
+  statoA: string;
+  preventivoId: string;
+}): { subject: string; html: string } {
+  const url = preventivoUrl(d.preventivoId);
+  const corpo = `
+    <p>Ciao <strong>${d.destinatarioNome}</strong>,</p>
+    <p>Il preventivo <strong>${d.numeroPreventivo}</strong> ha cambiato stato.</p>
     <ul>
       <li><strong>Cliente:</strong> ${d.cliente}</li>
       <li><strong>Da:</strong> ${d.statoDa}</li>
       <li><strong>A:</strong> ${d.statoA}</li>
-      <li><strong>Aggiornato da:</strong> ${d.changedByName}</li>
-      ${d.descrizione ? `<li><strong>Descrizione:</strong> ${d.descrizione}</li>` : ""}
-      ${d.note ? `<li><strong>Note:</strong> ${d.note}</li>` : ""}
     </ul>
-    ${praticaButton(d.praticaId)}`;
+    ${actionButton(url, "Apri preventivo")}`;
   return {
-    subject: `[${d.numeroPratica}] Stato aggiornato: ${d.statoA} — ${d.cliente}`,
-    html: baseTemplate("Stato pratica aggiornato", corpo),
-  };
-}
-
-// Email assegnazione pratica all'operatore.
-export function operatoreAssegnatoEmail(d: OperatoreAssegnatoEmailData): { subject: string; html: string } {
-  const corpo = `
-    <p>Ciao <strong>${d.operatoreNome}</strong>,</p>
-    <p>Ti è stata assegnata la pratica <strong>${d.numeroPratica}</strong>.</p>
-    <ul>
-      <li><strong>Cliente:</strong> ${d.cliente}</li>
-      <li><strong>Stato:</strong> ${d.stato}</li>
-      <li><strong>Assegnata da:</strong> ${d.assegnatoDa}</li>
-      ${d.descrizione ? `<li><strong>Descrizione:</strong> ${d.descrizione}</li>` : ""}
-      ${d.note ? `<li><strong>Note:</strong> ${d.note}</li>` : ""}
-    </ul>
-    <p>Prendi in carico l'intervento appena possibile.</p>
-    ${praticaButton(d.praticaId)}`;
-  return {
-    subject: `[${d.numeroPratica}] Nuova pratica assegnata — ${d.cliente}`,
-    html: baseTemplate("Nuova pratica assegnata", corpo),
-  };
-}
-
-// Email sollecito all'operatore.
-export function sollecitoEmail(d: SollecitoEmailData): { subject: string; html: string } {
-  const corpo = `
-    <p>Ciao <strong>${d.destinatarioNome}</strong>,</p>
-    <p>Sollecito sulla pratica <strong>${d.numeroPratica}</strong> ancora aperta.</p>
-    <ul>
-      <li><strong>Cliente:</strong> ${d.cliente}</li>
-      <li><strong>Stato attuale:</strong> ${d.stato}</li>
-      ${d.note ? `<li><strong>Note:</strong> ${d.note}</li>` : ""}
-    </ul>
-    <p>Ti chiediamo un aggiornamento sullo stato dell'intervento.</p>
-    ${praticaButton(d.praticaId)}`;
-  return {
-    subject: `[${d.numeroPratica}] SOLLECITO — ${d.cliente}`,
-    html: baseTemplate("Sollecito intervento", corpo),
+    subject: `[${d.numeroPreventivo}] Stato: ${d.statoA} — ${d.cliente}`,
+    html: baseTemplate("Stato preventivo aggiornato", corpo),
   };
 }

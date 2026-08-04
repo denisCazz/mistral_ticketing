@@ -53,15 +53,18 @@ function LoginForm() {
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">Utente</Label>
             <Input
               id="email"
               name="email"
-              type="email"
-              placeholder="operatore@mistralimpianti.it"
+              type="text"
+              placeholder="nome.cognome"
               required
-              autoComplete="email"
+              autoComplete="username"
             />
+            <p className="text-xs text-gray-400">
+              Puoi usare nome.cognome oppure l&apos;email completa
+            </p>
           </div>
           <div className="space-y-1">
             <Label htmlFor="password">Password</Label>

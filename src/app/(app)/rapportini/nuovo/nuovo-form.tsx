@@ -43,7 +43,6 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 type FormState = {
   clienteId: string;
-  praticaId: string;
   dataIntervento: string;
   oraIntervento: string;
   tipologiaIntervento: string;
@@ -72,7 +71,6 @@ type FormState = {
 export default function NuovoRapportinoForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const praticaId = searchParams.get("praticaId");
 
   const [clienti, setClienti] = useState<ClienteOption[]>([]);
   const [marche, setMarche] = useState<MarcaOption[]>([]);
@@ -81,7 +79,6 @@ export default function NuovoRapportinoForm() {
 
   const [form, setForm] = useState<FormState>({
     clienteId: "",
-    praticaId: praticaId || "",
     dataIntervento: today(),
     oraIntervento: "",
     tipologiaIntervento: "manutenzione_periodica",
@@ -166,7 +163,6 @@ export default function NuovoRapportinoForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
-          praticaId: form.praticaId || null,
           spiegataManutenzione: form.spiegataManutenzione || null,
           accessibilita: form.accessibilita || null,
           integritaComponente: form.integritaComponente || null,

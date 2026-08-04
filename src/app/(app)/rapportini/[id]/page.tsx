@@ -89,7 +89,6 @@ export default function RapportinoDetailPage() {
     ["Cliente", item.cliente?.ragioneSociale || "—"],
     ["Data", item.dataIntervento + (item.oraIntervento ? ` · ${item.oraIntervento}` : "")],
     ["Operatore", item.utente?.name || "—"],
-    ["Pratica", item.pratica?.numeroPratica || "—"],
     ["Settore", formatSettore(item.settore)],
     ["Impianto", `${formatTipoImpianto(item.tipoImpianto)} · ${item.marca} ${item.modello}`],
     ["N° serie", item.numeroSerie || "—"],

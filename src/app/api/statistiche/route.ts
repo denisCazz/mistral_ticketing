@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { STATI_CHIUSURA } from "@/lib/constants";
-import { StatoPratica } from "@prisma/client";
+import { STATI_PREVENTIVO_CHIUSURA } from "@/lib/preventivo-constants";
+import { StatoPreventivo } from "@prisma/client";
 
 export async function GET() {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const praticaWhere =
+  const preventivoWhere =
     session.user?.role === "OPERATORE"
       ? { operatoreId: session.user.id! }
       : {};
@@ -17,39 +17,43 @@ export async function GET() {
     perStato,
     totaleClienti,
     perOperatoreRaw,
-    completate,
+    accettati,
     tuttiCreatedAt,
   ] = await Promise.all([
-    prisma.pratica.groupBy({ by: ["stato"], where: praticaWhere, _count: { stato: true } }),
+    prisma.preventivo.groupBy({
+      by: ["stato"],
+      where: preventivoWhere,
+      _count: { stato: true },
+    }),
     session.user?.role === "ADMIN" ? prisma.cliente.count() : Promise.resolve(0),
-    prisma.pratica.groupBy({
+    prisma.preventivo.groupBy({
       by: ["operatoreId"],
-      where: praticaWhere,
+      where: preventivoWhere,
       _count: { operatoreId: true },
     }),
-    prisma.pratica.findMany({
-      where: { ...praticaWhere, stato: "COMPLETATA" },
+    prisma.preventivo.findMany({
+      where: { ...preventivoWhere, stato: "ACCETTATO" },
       select: { createdAt: true, updatedAt: true },
     }),
-    prisma.pratica.findMany({
-      where: praticaWhere,
+    prisma.preventivo.findMany({
+      where: preventivoWhere,
       select: { createdAt: true },
     }),
   ]);
 
-  const totalePratiche = perStato.reduce((s, x) => s + x._count.stato, 0);
+  const totalePreventivi = perStato.reduce((s, x) => s + x._count.stato, 0);
   const chiuse = perStato
-    .filter((x) => STATI_CHIUSURA.includes(x.stato))
+    .filter((x) => STATI_PREVENTIVO_CHIUSURA.includes(x.stato))
     .reduce((s, x) => s + x._count.stato, 0);
-  const aperte = totalePratiche - chiuse;
+  const aperte = totalePreventivi - chiuse;
 
   let tempoMedioGiorni: number | null = null;
-  if (completate.length > 0) {
-    const totMs = completate.reduce(
+  if (accettati.length > 0) {
+    const totMs = accettati.reduce(
       (acc, p) => acc + (p.updatedAt.getTime() - p.createdAt.getTime()),
       0
     );
-    tempoMedioGiorni = totMs / completate.length / (1000 * 60 * 60 * 24);
+    tempoMedioGiorni = totMs / accettati.length / (1000 * 60 * 60 * 24);
   }
 
   const operatoreIds = perOperatoreRaw.map((o) => o.operatoreId);
@@ -71,7 +75,10 @@ export async function GET() {
 
   const now = new Date();
   const mesi: { key: string; label: string; count: number }[] = [];
-  const meseLabels = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"];
+  const meseLabels = [
+    "Gen", "Feb", "Mar", "Apr", "Mag", "Giu",
+    "Lug", "Ago", "Set", "Ott", "Nov", "Dic",
+  ];
   const idxByKey = new Map<string, number>();
   for (let i = 11; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -91,13 +98,13 @@ export async function GET() {
   }
 
   const perStatoObj = perStato.map((s) => ({
-    stato: s.stato as StatoPratica,
+    stato: s.stato as StatoPreventivo,
     count: s._count.stato,
   }));
 
   return NextResponse.json({
     totali: {
-      pratiche: totalePratiche,
+      preventivi: totalePreventivi,
       aperte,
       chiuse,
       clienti: totaleClienti,

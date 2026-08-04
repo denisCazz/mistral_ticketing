@@ -44,7 +44,7 @@ export async function GET(req: Request) {
       skip,
       take: limit,
       orderBy: { ragioneSociale: "asc" },
-      include: { _count: { select: { pratiche: true } } },
+      include: { _count: { select: { preventivi: true } } },
     }),
     prisma.cliente.count({ where }),
   ]);
