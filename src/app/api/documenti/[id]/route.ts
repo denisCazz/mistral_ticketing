@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { StatoValidita } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { canAccessDocumentiHr } from "@/lib/access";
 import { prisma } from "@/lib/db";
@@ -67,7 +68,7 @@ export async function PUT(req: Request, { params }: Params) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  let statoValidita = body.statoValidita as string | undefined;
+  let statoValidita = body.statoValidita as StatoValidita | undefined;
   if (dataScadenza instanceof Date && !Number.isNaN(dataScadenza.getTime())) {
     statoValidita = dataScadenza < today ? "SCADUTO" : "VALIDO";
   }
