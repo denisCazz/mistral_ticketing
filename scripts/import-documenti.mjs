@@ -61,11 +61,15 @@ const ALLOWED = [
   "attestato",
 ];
 
+const SKIP_EXTS = new Set([".zip", ".rar", ".7z", ".tar", ".gz", ".tgz", ".bz2"]);
+
 function shouldSkip(name) {
   const l = name.toLowerCase();
   if (SKIP.has(l)) return true;
   if (l.startsWith("~$")) return true;
   if (l.endsWith(".db")) return true;
+  const ext = l.includes(".") ? l.slice(l.lastIndexOf(".")) : "";
+  if (SKIP_EXTS.has(ext)) return true;
   return false;
 }
 

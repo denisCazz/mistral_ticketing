@@ -27,7 +27,6 @@ function costOfAudit(row: {
   promptTokens?: number | null;
   completionTokens?: number | null;
   embeddingTokens?: number | null;
-  estimatedCostUsd?: { toNumber?: () => number } | number | null;
 }): { promptTokens: number; completionTokens: number; embeddingTokens: number; costUsd: number; estimated: boolean } {
   const usage =
     row.outputJson &&
@@ -39,29 +38,15 @@ function costOfAudit(row: {
   const storedPrompt = row.promptTokens ?? usage?.promptTokens ?? null;
   const storedCompletion = row.completionTokens ?? usage?.completionTokens ?? null;
   const storedEmbedding = row.embeddingTokens ?? usage?.embeddingTokens ?? null;
-  const storedCost =
-    row.estimatedCostUsd != null
-      ? typeof row.estimatedCostUsd === "number"
-        ? row.estimatedCostUsd
-        : Number(row.estimatedCostUsd)
-      : usage?.estimatedCostUsd ?? null;
 
-  if (storedCost != null && storedPrompt != null && storedCompletion != null) {
-    return {
-      promptTokens: storedPrompt,
-      completionTokens: storedCompletion,
-      embeddingTokens: storedEmbedding ?? 0,
-      costUsd: storedCost,
-      estimated: false,
-    };
-  }
-
+  const hasExactTokens = storedPrompt != null && storedCompletion != null;
   const promptTokens = storedPrompt ?? estimateTokensFromText(row.prompt);
   const completionTokens =
     storedCompletion ??
     estimateTokensFromText(JSON.stringify(row.outputJson ?? {}));
   const embeddingTokens =
-    storedEmbedding ?? estimateTokensFromText(row.prompt);
+    storedEmbedding ?? (hasExactTokens ? 0 : estimateTokensFromText(row.prompt));
+  // Ricalcola sempre dalle tariffe correnti (incl. markup).
   const costUsd = estimateCostUsd({
     model: row.model || OPENAI_CHAT_MODEL,
     promptTokens,
@@ -74,7 +59,7 @@ function costOfAudit(row: {
     completionTokens,
     embeddingTokens,
     costUsd,
-    estimated: true,
+    estimated: !hasExactTokens,
   };
 }
 

@@ -3,10 +3,15 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import {
   ensureUsersForDipendenti,
+  getOrCreateCostiStandard,
   prefillSedeWeekdays,
-  serializeTariffe,
 } from "@/lib/dipendente-user";
-import { TIPI_PRESENZA, type TipoPresenza } from "@/lib/presenze";
+import {
+  resolveTariffe,
+  TIPI_PRESENZA,
+  type TariffeDipendente,
+  type TipoPresenza,
+} from "@/lib/presenze";
 
 function parseYearMonth(value: string | null): { year: number; month: number } | null {
   if (!value || !/^\d{4}-\d{2}$/.test(value)) return null;
@@ -28,14 +33,14 @@ function serializeDipendente(d: {
   active: boolean;
   archiviato: boolean;
   userId: string | null;
-  costoGiornata: unknown;
-  indennitaTrasferta: unknown;
-  costoMutua: unknown;
-  costoPermesso: unknown;
-  costoFerie: unknown;
-  costoFestivo: unknown;
+  costoGiornata: unknown | null;
+  indennitaTrasferta: unknown | null;
+  costoMutua: unknown | null;
+  costoPermesso: unknown | null;
+  costoFerie: unknown | null;
+  costoFestivo: unknown | null;
   user?: { email: string } | null;
-}) {
+}, standard: TariffeDipendente) {
   return {
     id: d.id,
     nome: d.nome,
@@ -44,7 +49,7 @@ function serializeDipendente(d: {
     archiviato: d.archiviato,
     userId: d.userId,
     email: d.user?.email ?? null,
-    ...serializeTariffe(d),
+    ...resolveTariffe(d, standard),
   };
 }
 
@@ -67,6 +72,7 @@ export async function GET(req: Request) {
   }
 
   const { from, to } = monthRange(ym.year, ym.month);
+  const standard = await getOrCreateCostiStandard();
 
   let dipendenti = await prisma.dipendente.findMany({
     where: { archiviato: false },
@@ -104,15 +110,28 @@ export async function GET(req: Request) {
     },
   });
 
+  const costiAccessori = await prisma.costoAccessorio.groupBy({
+    by: ["dipendenteId"],
+    where: {
+      data: { gte: from, lte: to },
+      dipendenteId: { in: dipendenti.map((d) => d.id) },
+    },
+    _sum: { importo: true },
+  });
+
   return NextResponse.json({
     mese: `${ym.year}-${String(ym.month).padStart(2, "0")}`,
-    dipendenti: dipendenti.map(serializeDipendente),
+    dipendenti: dipendenti.map((d) => serializeDipendente(d, standard)),
     presenze: presenze.map((p) => ({
       id: p.id,
       dipendenteId: p.dipendenteId,
       data: p.data.toISOString().slice(0, 10),
       tipo: p.tipo,
       note: p.note,
+    })),
+    costiAccessori: costiAccessori.map((costo) => ({
+      dipendenteId: costo.dipendenteId,
+      totale: Number(costo._sum.importo ?? 0),
     })),
   });
 }

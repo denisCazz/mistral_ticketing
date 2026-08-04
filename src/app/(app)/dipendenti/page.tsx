@@ -14,6 +14,7 @@ import {
 import { it } from "date-fns/locale";
 import { toast } from "sonner";
 import {
+  CalendarRange,
   ChevronLeft,
   ChevronRight,
   IdCard,
@@ -65,6 +66,11 @@ type Presenza = {
   note: string | null;
 };
 
+type TotaleAccessorio = {
+  dipendenteId: string;
+  totale: number;
+};
+
 function toMonthKey(date: Date) {
   return format(date, "yyyy-MM");
 }
@@ -77,6 +83,7 @@ export default function DipendentiPage() {
   const [mese, setMese] = useState(() => startOfMonth(new Date()));
   const [dipendenti, setDipendenti] = useState<Dipendente[]>([]);
   const [presenze, setPresenze] = useState<Presenza[]>([]);
+  const [costiAccessori, setCostiAccessori] = useState<TotaleAccessorio[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingCell, setSavingCell] = useState<string | null>(null);
 
@@ -101,6 +108,11 @@ export default function DipendentiPage() {
   const [nuovoOpen, setNuovoOpen] = useState(false);
   const [nuovoForm, setNuovoForm] = useState({ nome: "", cognome: "" });
   const [saving, setSaving] = useState(false);
+  const [massivaOpen, setMassivaOpen] = useState(false);
+  const [massivaDipendenti, setMassivaDipendenti] = useState<string[]>([]);
+  const [massivaDate, setMassivaDate] = useState<string[]>([]);
+  const [massivaTipo, setMassivaTipo] = useState<TipoPresenza>("SEDE");
+  const [massivaSaving, setMassivaSaving] = useState(false);
 
   const days = useMemo(() => {
     return eachDayOfInterval({
@@ -128,7 +140,16 @@ export default function DipendentiPage() {
     const data = await res.json();
     setDipendenti(data.dipendenti);
     setPresenze(data.presenze);
+    setCostiAccessori(data.costiAccessori ?? []);
   }, []);
+
+  const costiAccessoriMap = useMemo(
+    () =>
+      new Map(
+        costiAccessori.map((costo) => [costo.dipendenteId, costo.totale])
+      ),
+    [costiAccessori]
+  );
 
   useEffect(() => {
     fetchMese(mese);
@@ -137,7 +158,7 @@ export default function DipendentiPage() {
   const stime = useMemo(() => {
     const map = new Map<string, number>();
     for (const d of dipendenti) {
-      let totale = 0;
+      let totale = costiAccessoriMap.get(d.id) ?? 0;
       for (const day of days) {
         const tipo = presenzaMap.get(`${d.id}:${dayKey(day)}`) ?? null;
         totale += costoGiorno(tipo, d);
@@ -145,7 +166,7 @@ export default function DipendentiPage() {
       map.set(d.id, totale);
     }
     return map;
-  }, [dipendenti, days, presenzaMap]);
+  }, [costiAccessoriMap, dipendenti, days, presenzaMap]);
 
   const totaleMese = useMemo(() => {
     let sum = 0;
@@ -270,10 +291,62 @@ export default function DipendentiPage() {
     fetchMese(mese);
   }
 
+  function openMassiva() {
+    setMassivaDipendenti([]);
+    setMassivaDate([]);
+    setMassivaTipo("SEDE");
+    setMassivaOpen(true);
+  }
+
+  function toggleMassivaDipendente(id: string) {
+    setMassivaDipendenti((prev) =>
+      prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]
+    );
+  }
+
+  function toggleMassivaData(data: string) {
+    setMassivaDate((prev) =>
+      prev.includes(data)
+        ? prev.filter((value) => value !== data)
+        : [...prev, data]
+    );
+  }
+
+  async function saveMassiva(e: React.FormEvent) {
+    e.preventDefault();
+    if (massivaDipendenti.length === 0 || massivaDate.length === 0) {
+      toast.error("Seleziona almeno un dipendente e una data");
+      return;
+    }
+
+    setMassivaSaving(true);
+    const res = await fetch("/api/presenze/massiva", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dipendenteIds: massivaDipendenti,
+        date: massivaDate,
+        tipo: massivaTipo,
+      }),
+    });
+    setMassivaSaving(false);
+
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      toast.error(error.error ?? "Errore nella pianificazione massiva");
+      return;
+    }
+
+    const data = await res.json();
+    await fetchMese(mese);
+    setMassivaOpen(false);
+    toast.success(`${data.aggiornati} presenze aggiornate`);
+  }
+
   const meseLabel = format(mese, "MMMM yyyy", { locale: it });
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+    <div className="p-4 pb-28 sm:p-6 sm:pb-32 space-y-4 sm:space-y-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -311,6 +384,10 @@ export default function DipendentiPage() {
             onClick={() => setMese(startOfMonth(new Date()))}
           >
             Oggi
+          </Button>
+          <Button variant="outline" onClick={openMassiva}>
+            <CalendarRange className="h-4 w-4 mr-2" />
+            Pianificazione massiva
           </Button>
           <Button
             className="bg-orange-500 hover:bg-orange-600"
@@ -444,7 +521,12 @@ export default function DipendentiPage() {
                         );
                       })}
                       <td className="sticky right-0 z-10 bg-white px-3 py-1.5 text-right font-semibold text-gray-900 border-l border-gray-200 tabular-nums">
-                        {formatEuro(stima)}
+                        <div>{formatEuro(stima)}</div>
+                        {(costiAccessoriMap.get(d.id) ?? 0) > 0 && (
+                          <div className="text-[10px] font-normal text-gray-400">
+                            incl. {formatEuro(costiAccessoriMap.get(d.id) ?? 0)} accessori
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
@@ -576,6 +658,171 @@ export default function DipendentiPage() {
                 className="bg-orange-500 hover:bg-orange-600"
               >
                 {saving ? "Salvataggio..." : "Salva"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pianificazione massiva */}
+      <Dialog open={massivaOpen} onOpenChange={setMassivaOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarRange className="h-5 w-5" />
+              Pianificazione massiva
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={saveMassiva} className="space-y-5">
+            <section className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <Label>Dipendenti</Label>
+                <button
+                  type="button"
+                  className="text-xs font-medium text-sky-700 hover:text-sky-900"
+                  onClick={() =>
+                    setMassivaDipendenti(
+                      massivaDipendenti.length === dipendenti.length
+                        ? []
+                        : dipendenti.map((d) => d.id)
+                    )
+                  }
+                >
+                  {massivaDipendenti.length === dipendenti.length
+                    ? "Deseleziona tutti"
+                    : "Seleziona tutti"}
+                </button>
+              </div>
+              <div className="grid max-h-44 grid-cols-1 gap-2 overflow-y-auto rounded-lg border border-gray-200 p-2 sm:grid-cols-2">
+                {dipendenti.map((d) => {
+                  const selected = massivaDipendenti.includes(d.id);
+                  return (
+                    <button
+                      key={d.id}
+                      type="button"
+                      onClick={() => toggleMassivaDipendente(d.id)}
+                      className={cn(
+                        "flex items-center gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                        selected
+                          ? "border-sky-500 bg-sky-50 text-sky-900"
+                          : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] font-bold",
+                          selected
+                            ? "border-sky-600 bg-sky-600 text-white"
+                            : "border-gray-300"
+                        )}
+                      >
+                        {selected ? "✓" : ""}
+                      </span>
+                      {d.cognome} {d.nome}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <Label className="capitalize">Date — {meseLabel}</Label>
+                <button
+                  type="button"
+                  className="text-xs font-medium text-sky-700 hover:text-sky-900"
+                  onClick={() => {
+                    const feriali = days
+                      .filter((day) => !isWeekend(day))
+                      .map(dayKey);
+                    const tuttiSelezionati = feriali.every((data) =>
+                      massivaDate.includes(data)
+                    );
+                    setMassivaDate(tuttiSelezionati ? [] : feriali);
+                  }}
+                >
+                  Seleziona feriali
+                </button>
+              </div>
+              <div className="grid grid-cols-7 gap-1.5 rounded-lg border border-gray-200 p-2">
+                {days.map((day) => {
+                  const data = dayKey(day);
+                  const selected = massivaDate.includes(data);
+                  return (
+                    <button
+                      key={data}
+                      type="button"
+                      onClick={() => toggleMassivaData(data)}
+                      className={cn(
+                        "rounded-md border px-1 py-2 text-center transition-colors",
+                        selected
+                          ? "border-sky-600 bg-sky-600 text-white"
+                          : isWeekend(day)
+                            ? "border-gray-100 bg-gray-50 text-gray-400 hover:border-gray-300"
+                            : "border-gray-200 bg-white text-gray-700 hover:bg-sky-50"
+                      )}
+                    >
+                      <span className="block text-[10px] uppercase">
+                        {format(day, "EEE", { locale: it }).slice(0, 2)}
+                      </span>
+                      <span className="block text-sm font-semibold">
+                        {format(day, "d")}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="space-y-2">
+              <Label>Stato da applicare</Label>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {TIPI_PRESENZA.map((tipo) => (
+                  <button
+                    key={tipo}
+                    type="button"
+                    onClick={() => setMassivaTipo(tipo)}
+                    className={cn(
+                      "rounded-lg border px-3 py-2 text-left transition-all",
+                      TIPO_PRESENZA_COLORS[tipo],
+                      massivaTipo === tipo &&
+                        "ring-2 ring-sky-600 ring-offset-1"
+                    )}
+                  >
+                    <span className="text-sm font-semibold">
+                      {TIPO_PRESENZA_LABELS[tipo]}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <div className="rounded-lg bg-sky-50 px-3 py-2 text-sm text-sky-900">
+              Verranno aggiornate{" "}
+              <span className="font-semibold">
+                {massivaDipendenti.length * massivaDate.length}
+              </span>{" "}
+              presenze.
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setMassivaOpen(false)}
+              >
+                Annulla
+              </Button>
+              <Button
+                type="submit"
+                disabled={
+                  massivaSaving ||
+                  massivaDipendenti.length === 0 ||
+                  massivaDate.length === 0
+                }
+                className="bg-orange-500 hover:bg-orange-600"
+              >
+                {massivaSaving ? "Aggiornamento..." : "Applica pianificazione"}
               </Button>
             </div>
           </form>

@@ -146,8 +146,12 @@ function splitEmployeeName(folderName: string): {
 }
 
 async function prepareEntityCaches(files: SourceFile[]) {
-  const dipendenti = await prisma.dipendente.findMany();
-  const automezzi = await prisma.automezzo.findMany();
+  const [dipendenti, automezzi] = await retry(() =>
+    Promise.all([
+      prisma.dipendente.findMany(),
+      prisma.automezzo.findMany(),
+    ])
+  );
   const employeeMap = new Map(
     dipendenti.map((d) => [
       `${d.cognome}|${d.nome}`.toLowerCase(),
@@ -178,14 +182,18 @@ async function prepareEntityCaches(files: SourceFile[]) {
     if (!parsed) continue;
     const key = `${parsed.cognome}|${parsed.nome}`.toLowerCase();
     if (!employeeMap.has(key)) {
-      const created = await prisma.dipendente.create({ data: parsed });
+      const created = await retry(() =>
+        prisma.dipendente.create({ data: parsed })
+      );
       employeeMap.set(key, created.id);
     }
   }
 
   for (const targa of vehiclePlates) {
     if (!vehicleMap.has(targa)) {
-      const created = await prisma.automezzo.create({ data: { targa } });
+      const created = await retry(() =>
+        prisma.automezzo.create({ data: { targa } })
+      );
       vehicleMap.set(targa, created.id);
     }
   }
@@ -209,6 +217,26 @@ async function runPool<T>(
     }
   );
   await Promise.all(runners);
+}
+
+async function retry<T>(
+  operation: () => Promise<T>,
+  attempts = 5
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, Math.min(30_000, 2_000 * 2 ** (attempt - 1)))
+        );
+      }
+    }
+  }
+  throw lastError;
 }
 
 async function importFile(
@@ -260,20 +288,22 @@ async function importFile(
   const mimeType = mimeFromExt(file.extension);
 
   try {
-    const r2Result = await execFileAsync(
-      process.execPath,
-      [
-        "--env-file=.env",
-        "scripts/r2-put.mjs",
-        file.absolutePath,
-        storageKey,
-        mimeType,
-      ],
-      {
-        cwd: process.cwd(),
-        timeout: 600_000,
-        maxBuffer: 1024 * 1024,
-      }
+    const r2Result = await retry(() =>
+      execFileAsync(
+        process.execPath,
+        [
+          "--env-file=.env",
+          "scripts/r2-put.mjs",
+          file.absolutePath,
+          storageKey,
+          mimeType,
+        ],
+        {
+          cwd: process.cwd(),
+          timeout: 600_000,
+          maxBuffer: 1024 * 1024,
+        }
+      )
     );
     if (r2Result.stdout.trim() === "existing") {
       stats.uploadExisting++;
@@ -281,46 +311,50 @@ async function importFile(
       stats.uploaded++;
     }
 
-    const documento = await prisma.documento.create({
-      data: {
-        storageKey,
-        sha256: file.sha256,
-        mimeType,
-        sizeBytes: file.sizeBytes,
-        titoloOriginale: file.name,
-        categoria: classification.categoria,
-        sottocategoria: classification.sottocategoria,
-        entityType: classification.entityType,
-        dipendenteId,
-        automezzoId,
-        dataScadenza: parsedDeadline.dataScadenza,
-        scadenzaSource:
-          parsedDeadline.dataScadenza || parsedDeadline.rawValue
-            ? parsedDeadline.fonte
-            : null,
-        scadenzaConfidence: parsedDeadline.confidence,
-        scadenzaRaw: parsedDeadline.rawValue,
-        statoValidita: parsedDeadline.statoValidita,
-        statoIngestione: "PENDING",
-        aiWhitelist,
-        sourcePath: file.relativePath,
-      },
-    });
-
-    if (parsedDeadline.dataScadenza) {
-      await prisma.scadenza.create({
+    const documento = await retry(() =>
+      prisma.documento.create({
         data: {
-          documentoId: documento.id,
+          storageKey,
+          sha256: file.sha256,
+          mimeType,
+          sizeBytes: file.sizeBytes,
+          titoloOriginale: file.name,
+          categoria: classification.categoria,
+          sottocategoria: classification.sottocategoria,
+          entityType: classification.entityType,
           dipendenteId,
           automezzoId,
-          titolo: file.name,
           dataScadenza: parsedDeadline.dataScadenza,
-          fonte: parsedDeadline.fonte,
-          confidence: parsedDeadline.confidence,
-          rawValue: parsedDeadline.rawValue,
-          confermata: parsedDeadline.confidence >= 0.8,
+          scadenzaSource:
+            parsedDeadline.dataScadenza || parsedDeadline.rawValue
+              ? parsedDeadline.fonte
+              : null,
+          scadenzaConfidence: parsedDeadline.confidence,
+          scadenzaRaw: parsedDeadline.rawValue,
+          statoValidita: parsedDeadline.statoValidita,
+          statoIngestione: "PENDING",
+          aiWhitelist,
+          sourcePath: file.relativePath,
         },
-      });
+      })
+    );
+
+    if (parsedDeadline.dataScadenza) {
+      await retry(() =>
+        prisma.scadenza.create({
+          data: {
+            documentoId: documento.id,
+            dipendenteId,
+            automezzoId,
+            titolo: file.name,
+            dataScadenza: parsedDeadline.dataScadenza!,
+            fonte: parsedDeadline.fonte,
+            confidence: parsedDeadline.confidence,
+            rawValue: parsedDeadline.rawValue,
+            confermata: parsedDeadline.confidence >= 0.8,
+          },
+        })
+      );
     }
 
     existingHashes.add(file.sha256);
@@ -368,9 +402,11 @@ async function main() {
     return;
   }
 
-  const existing = await prisma.documento.findMany({
-    select: { sha256: true },
-  });
+  const existing = await retry(() =>
+    prisma.documento.findMany({
+      select: { sha256: true },
+    })
+  );
   const existingHashes = new Set(existing.map((d) => d.sha256));
   const { employeeMap, vehicleMap } = await prepareEntityCaches(files);
 

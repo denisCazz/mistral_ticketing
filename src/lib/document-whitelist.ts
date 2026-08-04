@@ -89,10 +89,23 @@ export const SKIP_FILE_NAMES = new Set([
   ".ds_store",
 ]);
 
+/** Archivi compressi: non importare (vogliamo i file già estratti). */
+const SKIP_EXTENSIONS = new Set([
+  ".zip",
+  ".rar",
+  ".7z",
+  ".tar",
+  ".gz",
+  ".tgz",
+  ".bz2",
+]);
+
 export function shouldSkipFile(name: string): boolean {
   const lower = name.toLowerCase();
   if (SKIP_FILE_NAMES.has(lower)) return true;
   if (lower.startsWith("~$")) return true;
   if (lower.endsWith(".db")) return true;
+  const ext = lower.includes(".") ? lower.slice(lower.lastIndexOf(".")) : "";
+  if (SKIP_EXTENSIONS.has(ext)) return true;
   return false;
 }

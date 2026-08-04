@@ -45,6 +45,38 @@ export type TariffeDipendente = {
   costoFestivo: number;
 };
 
+export function resolveTariffe(
+  override: Record<keyof TariffeDipendente, unknown | null>,
+  standard: TariffeDipendente
+): TariffeDipendente {
+  return {
+    costoGiornata:
+      override.costoGiornata == null
+        ? standard.costoGiornata
+        : Number(override.costoGiornata),
+    indennitaTrasferta:
+      override.indennitaTrasferta == null
+        ? standard.indennitaTrasferta
+        : Number(override.indennitaTrasferta),
+    costoMutua:
+      override.costoMutua == null
+        ? standard.costoMutua
+        : Number(override.costoMutua),
+    costoPermesso:
+      override.costoPermesso == null
+        ? standard.costoPermesso
+        : Number(override.costoPermesso),
+    costoFerie:
+      override.costoFerie == null
+        ? standard.costoFerie
+        : Number(override.costoFerie),
+    costoFestivo:
+      override.costoFestivo == null
+        ? standard.costoFestivo
+        : Number(override.costoFestivo),
+  };
+}
+
 export function costoGiorno(
   tipo: TipoPresenza | null | undefined,
   tariffe: TariffeDipendente

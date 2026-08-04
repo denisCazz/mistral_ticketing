@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getOrCreateCostiStandard } from "@/lib/dipendente-user";
+import { resolveTariffe } from "@/lib/presenze";
 
 function parseMoney(value: unknown): number | undefined {
   if (value === undefined || value === null || value === "") return undefined;
@@ -62,16 +64,12 @@ export async function PATCH(
     where: { id },
     data,
   });
+  const standard = await getOrCreateCostiStandard();
 
   return NextResponse.json({
     dipendente: {
       ...dipendente,
-      costoGiornata: Number(dipendente.costoGiornata),
-      indennitaTrasferta: Number(dipendente.indennitaTrasferta),
-      costoMutua: Number(dipendente.costoMutua),
-      costoPermesso: Number(dipendente.costoPermesso),
-      costoFerie: Number(dipendente.costoFerie),
-      costoFestivo: Number(dipendente.costoFestivo),
+      ...resolveTariffe(dipendente, standard),
     },
   });
 }

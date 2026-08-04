@@ -164,7 +164,11 @@ export default function UtentiPage() {
               </div>
               <div className="space-y-1">
                 <Label>Ruolo</Label>
-                <Select value={form.role} onValueChange={(v) => setForm((f) => ({ ...f, role: v as User["role"] }))}>
+                <Select
+                  value={form.role}
+                  onValueChange={(v) => setForm((f) => ({ ...f, role: v as User["role"] }))}
+                  items={{ ADMIN: "Admin", OPERATORE: "Operatore" }}
+                >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ADMIN">Admin</SelectItem>
@@ -205,7 +209,11 @@ export default function UtentiPage() {
                 </div>
                 <div className="space-y-1">
                   <Label>Ruolo</Label>
-                  <Select value={editForm.role} onValueChange={(v) => setEditForm((f) => ({ ...f, role: v as User["role"] }))}>
+                  <Select
+                    value={editForm.role}
+                    onValueChange={(v) => setEditForm((f) => ({ ...f, role: v as User["role"] }))}
+                    items={{ ADMIN: "Admin", OPERATORE: "Operatore" }}
+                  >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="ADMIN">Admin</SelectItem>

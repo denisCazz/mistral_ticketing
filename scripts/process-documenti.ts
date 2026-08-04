@@ -169,24 +169,26 @@ async function extractDocument(documento: {
   }
 
   if (!dryRun) {
-    await prisma.$transaction([
-      prisma.documento.update({
+    // Evita $transaction batch: con adapter pg + latenza VPS scade il default 5s
+    // anche passando timeout. Operazioni sequenziali + retry sono più stabili.
+    await retry(async () => {
+      await prisma.documento.update({
         where: { id: documento.id },
         data: {
           extractedText: normalized,
           statoIngestione: "READY",
         },
-      }),
-      prisma.documentoTesto.deleteMany({
+      });
+      await prisma.documentoTesto.deleteMany({
         where: { documentoId: documento.id },
-      }),
-      prisma.documentoTesto.create({
+      });
+      await prisma.documentoTesto.create({
         data: {
           documentoId: documento.id,
           content: normalized,
         },
-      }),
-    ]);
+      });
+    });
   }
 
   report.extracted++;

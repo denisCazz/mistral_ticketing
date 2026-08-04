@@ -8,8 +8,11 @@ import {
   ensureUsersForDipendenti,
   getOrCreateCostiStandard,
   prefillSedeWeekdays,
-  serializeTariffe,
 } from "@/lib/dipendente-user";
+import {
+  resolveTariffe,
+  type TariffeDipendente,
+} from "@/lib/presenze";
 
 function serializeDipendente(
   d: {
@@ -19,13 +22,14 @@ function serializeDipendente(
     active: boolean;
     archiviato: boolean;
     userId: string | null;
-    costoGiornata: unknown;
-    indennitaTrasferta: unknown;
-    costoMutua: unknown;
-    costoPermesso: unknown;
-    costoFerie: unknown;
-    costoFestivo: unknown;
+    costoGiornata: unknown | null;
+    indennitaTrasferta: unknown | null;
+    costoMutua: unknown | null;
+    costoPermesso: unknown | null;
+    costoFerie: unknown | null;
+    costoFestivo: unknown | null;
   },
+  standard: TariffeDipendente,
   userEmail?: string | null
 ) {
   return {
@@ -36,7 +40,7 @@ function serializeDipendente(
     archiviato: d.archiviato,
     userId: d.userId,
     email: userEmail ?? null,
-    ...serializeTariffe(d),
+    ...resolveTariffe(d, standard),
   };
 }
 
@@ -52,6 +56,7 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const includeArchiviati = searchParams.get("archiviati") === "1";
   const ensureUsers = searchParams.get("ensureUsers") === "1";
+  const standard = await getOrCreateCostiStandard();
 
   let rows = await prisma.dipendente.findMany({
     where: includeArchiviati ? undefined : { archiviato: false },
@@ -68,7 +73,9 @@ export async function GET(req: Request) {
     });
   }
 
-  const dipendenti = rows.map((d) => serializeDipendente(d, d.user?.email));
+  const dipendenti = rows.map((d) =>
+    serializeDipendente(d, standard, d.user?.email)
+  );
 
   return NextResponse.json({ dipendenti });
 }
@@ -100,6 +107,7 @@ export async function POST(req: Request) {
     include: { user: { select: { email: true } } },
   });
   if (existing) {
+    const standard = await getOrCreateCostiStandard();
     if (!existing.userId) {
       await ensureUserForDipendente(existing);
       const refreshed = await prisma.dipendente.findUnique({
@@ -108,23 +116,25 @@ export async function POST(req: Request) {
       });
       if (refreshed) {
         return NextResponse.json({
-          dipendente: serializeDipendente(refreshed, refreshed.user?.email),
+          dipendente: serializeDipendente(
+            refreshed,
+            standard,
+            refreshed.user?.email
+          ),
         });
       }
     }
     return NextResponse.json({
-      dipendente: serializeDipendente(existing, existing.user?.email),
+      dipendente: serializeDipendente(existing, standard, existing.user?.email),
     });
   }
 
-  const standard = await getOrCreateCostiStandard();
   const now = new Date();
 
   const dipendente = await prisma.dipendente.create({
     data: {
       nome,
       cognome,
-      ...standard,
     },
   });
 
@@ -145,10 +155,15 @@ export async function POST(req: Request) {
     where: { id: dipendente.id },
     include: { user: { select: { email: true } } },
   });
+  const standard = await getOrCreateCostiStandard();
 
   return NextResponse.json(
     {
-      dipendente: serializeDipendente(full, full.user?.email ?? email),
+      dipendente: serializeDipendente(
+        full,
+        standard,
+        full.user?.email ?? email
+      ),
       credenziali: {
         utente: email.split("@")[0],
         email,

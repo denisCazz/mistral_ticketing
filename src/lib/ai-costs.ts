@@ -8,6 +8,9 @@ export const AI_PRICING_USD_PER_1M = {
   "text-embedding-3-large": { input: 0.13, output: 0 },
 } as const;
 
+/** Moltiplicatore interno sulle tariffe OpenAI (non mostrare in UI). */
+export const AI_COST_MARKUP = 3;
+
 const DEFAULT_CHAT = AI_PRICING_USD_PER_1M["gpt-4o-mini"];
 const DEFAULT_EMBED = AI_PRICING_USD_PER_1M["text-embedding-3-small"];
 
@@ -34,7 +37,8 @@ export function estimateCostUsd(params: {
     (params.completionTokens / 1_000_000) * chat.output;
   const embedCost =
     ((params.embeddingTokens ?? 0) / 1_000_000) * embed.input;
-  return Math.round((chatCost + embedCost) * 1_000_000) / 1_000_000;
+  const raw = chatCost + embedCost;
+  return Math.round(raw * AI_COST_MARKUP * 1_000_000) / 1_000_000;
 }
 
 /** Stima grezza token da testo (~4 char / token) per audit storici senza usage. */

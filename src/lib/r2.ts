@@ -123,3 +123,21 @@ export async function downloadFromR2(key: string): Promise<Buffer> {
   if (!bytes) throw new Error("File vuoto");
   return Buffer.from(bytes);
 }
+
+/** Stream R2 object for inline browser preview (same-origin proxy). */
+export async function streamFromR2(key: string): Promise<{
+  body: ReadableStream;
+  contentType: string | undefined;
+  contentLength: number | undefined;
+}> {
+  const s3 = getClient();
+  const res = await s3.send(
+    new GetObjectCommand({ Bucket: R2_BUCKET, Key: key })
+  );
+  if (!res.Body) throw new Error("File vuoto");
+  return {
+    body: res.Body.transformToWebStream(),
+    contentType: res.ContentType,
+    contentLength: res.ContentLength,
+  };
+}

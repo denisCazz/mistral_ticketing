@@ -3,10 +3,17 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { PreventivoStatoBadge } from "@/components/preventivo-stato-badge";
 import { STATO_PREVENTIVO_LABELS } from "@/lib/preventivo-constants";
 import { StatoPreventivo } from "@prisma/client";
-import { Users, FileText, CalendarClock, AlertTriangle } from "lucide-react";
+import {
+  Users,
+  FileText,
+  CalendarClock,
+  AlertTriangle,
+  RefreshCw,
+} from "lucide-react";
 import { useSession } from "next-auth/react";
 
 interface DashboardData {
@@ -29,24 +36,60 @@ export default function DashboardPage() {
   const { data: session } = useSession();
   const isAdmin = session?.user?.role === "ADMIN";
   const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    fetch("/api/dashboard")
+    const controller = new AbortController();
+    setLoading(true);
+    setError(false);
+
+    fetch("/api/dashboard", { signal: controller.signal })
       .then((r) => {
         if (!r.ok) throw new Error("Dashboard API error");
         return r.json();
       })
-      .then(setData)
-      .catch(() => setData(null));
-  }, []);
+      .then((json: DashboardData) => {
+        setData(json);
+        setError(false);
+      })
+      .catch((err) => {
+        if (!(err instanceof DOMException && err.name === "AbortError")) {
+          setError(true);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
 
-  if (!data) {
+    return () => controller.abort();
+  }, [reloadKey]);
+
+  if (loading && !data) {
     return (
-      <div className="p-8 flex flex-col items-center justify-center gap-3 text-center">
-        <p className="text-gray-600">Impossibile caricare la dashboard.</p>
-        <p className="text-sm text-gray-500">
-          Verifica che il database sia migrato: <code className="text-xs">npm run db:push</code>
-        </p>
+      <div className="flex min-h-80 items-center justify-center p-8">
+        <RefreshCw className="size-7 animate-spin text-sky-700" />
+      </div>
+    );
+  }
+
+  if (!data || error) {
+    return (
+      <div className="flex min-h-80 flex-col items-center justify-center gap-4 p-8 text-center">
+        <div>
+          <p className="font-medium text-gray-900">Impossibile caricare la dashboard</p>
+          <p className="mt-1 text-sm text-gray-500">Riprova tra qualche istante.</p>
+        </div>
+        <Button
+          variant="outline"
+          onClick={() => {
+            setData(null);
+            setReloadKey((key) => key + 1);
+          }}
+        >
+          <RefreshCw className="size-4" /> Riprova
+        </Button>
       </div>
     );
   }

@@ -2,6 +2,7 @@
 
 import { SessionProvider } from "next-auth/react";
 import { Sidebar, MobileTopbar } from "@/components/layout/sidebar";
+import { FloatingDocumentiAiChat } from "@/components/documenti-ai-chat";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -14,6 +15,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             {children}
           </main>
         </div>
+        <FloatingDocumentiAiChat />
       </div>
     </SessionProvider>
   );

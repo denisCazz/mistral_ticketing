@@ -210,7 +210,13 @@ function NuovoPreventivoContent() {
         <div className="space-y-2">
           <Label>Cliente</Label>
           <div className="flex flex-col sm:flex-row gap-2">
-            <Select value={clienteId} onValueChange={(v) => setClienteId(v ?? "")}>
+            <Select
+              value={clienteId || null}
+              onValueChange={(v) => setClienteId(v ?? "")}
+              items={Object.fromEntries(
+                clienti.map((c) => [c.id, c.ragioneSociale])
+              )}
+            >
               <SelectTrigger className="flex-1">
                 <SelectValue placeholder="Seleziona cliente" />
               </SelectTrigger>

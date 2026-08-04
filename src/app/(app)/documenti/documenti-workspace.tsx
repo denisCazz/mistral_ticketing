@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import {
@@ -13,6 +14,7 @@ import {
   File,
   FileText,
   Folder,
+  Plus,
   Search,
   ShieldCheck,
   Upload,
@@ -36,6 +38,13 @@ import {
   ENTITY_LABELS,
   type EntityTypeKey,
 } from "@/lib/document-categories";
+import {
+  getCachedList,
+  getCachedTree,
+  invalidateDocumentiCache,
+  setCachedList,
+  setCachedTree,
+} from "@/lib/documenti-cache";
 import { cn } from "@/lib/utils";
 
 type TreeNode = {
@@ -115,12 +124,17 @@ function entityLabel(documento: Documento): string {
   return ENTITY_LABELS[documento.entityType] ?? "Azienda";
 }
 
+const NEW_CATEGORY_VALUE = "__new_categoria__";
+const NEW_DIPENDENTE_VALUE = "__new_dipendente__";
+const NEW_AUTOMEZZO_VALUE = "__new_automezzo__";
+
 function UploadDialog({
   open,
   onOpenChange,
   section,
   destination,
   categoriaPreset,
+  knownCategories,
   onUploaded,
 }: {
   open: boolean;
@@ -128,13 +142,22 @@ function UploadDialog({
   section: EntityTypeKey | null;
   destination: TreeNode | null;
   categoriaPreset: string | null;
+  knownCategories: Record<EntityTypeKey, string[]>;
   onUploaded: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [entityType, setEntityType] = useState<EntityTypeKey>("AZIENDA");
   const [categoria, setCategoria] = useState("CCIAA");
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [creatingCategoria, setCreatingCategoria] = useState(false);
+  const [nuovaCategoria, setNuovaCategoria] = useState("");
   const [dipendenteId, setDipendenteId] = useState("");
   const [automezzoId, setAutomezzoId] = useState("");
+  const [creatingDipendente, setCreatingDipendente] = useState(false);
+  const [nuovoDipendente, setNuovoDipendente] = useState({ nome: "", cognome: "" });
+  const [creatingAutomezzo, setCreatingAutomezzo] = useState(false);
+  const [nuovoAutomezzo, setNuovoAutomezzo] = useState({ targa: "", descrizione: "" });
+  const [creatingEntity, setCreatingEntity] = useState(false);
   const [dataScadenza, setDataScadenza] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [dipendenti, setDipendenti] = useState<Dipendente[]>([]);
@@ -146,12 +169,19 @@ function UploadDialog({
   useEffect(() => {
     if (!open) return;
     const nextType = section ?? "AZIENDA";
+    const nextCategoria =
+      categoriaPreset ?? destination?.categoria ?? categorieForEntity(nextType)[0] ?? "ALTRO";
     setEntityType(nextType);
-    setCategoria(
-      categoriaPreset ?? destination?.categoria ?? categorieForEntity(nextType)[0] ?? "ALTRO"
-    );
+    setCategoria(nextCategoria);
+    setCustomCategories([]);
+    setCreatingCategoria(false);
+    setNuovaCategoria("");
     setDipendenteId(destination?.dipendenteId ?? "");
     setAutomezzoId(destination?.automezzoId ?? "");
+    setCreatingDipendente(false);
+    setNuovoDipendente({ nome: "", cognome: "" });
+    setCreatingAutomezzo(false);
+    setNuovoAutomezzo({ targa: "", descrizione: "" });
     setDataScadenza("");
     setFiles([]);
     setProgress(0);
@@ -165,7 +195,130 @@ function UploadDialog({
     });
   }, [open, section, destination, categoriaPreset]);
 
-  const categories = useMemo(() => categorieForEntity(entityType), [entityType]);
+  const categories = useMemo(() => {
+    const base = categorieForEntity(entityType);
+    const extras = [
+      ...(knownCategories[entityType] ?? []),
+      ...customCategories,
+      categoria,
+    ].filter(Boolean);
+    const seen = new Set<string>(base);
+    const merged = [...base];
+    for (const item of extras) {
+      const name = item.trim();
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      merged.push(name);
+    }
+    return merged;
+  }, [entityType, knownCategories, customCategories, categoria]);
+
+  function resetEntityCreateForms() {
+    setCreatingDipendente(false);
+    setNuovoDipendente({ nome: "", cognome: "" });
+    setCreatingAutomezzo(false);
+    setNuovoAutomezzo({ targa: "", descrizione: "" });
+  }
+
+  function switchEntityType(type: EntityTypeKey) {
+    setEntityType(type);
+    setCategoria(categorieForEntity(type)[0] ?? "ALTRO");
+    setCreatingCategoria(false);
+    setNuovaCategoria("");
+    setDipendenteId("");
+    setAutomezzoId("");
+    resetEntityCreateForms();
+  }
+
+  function confirmNuovaCategoria() {
+    const name = nuovaCategoria.replace(/\s+/g, " ").trim().toUpperCase();
+    if (!name) {
+      toast.error("Inserisci il nome della categoria");
+      return;
+    }
+    setCustomCategories((current) =>
+      current.includes(name) ? current : [...current, name]
+    );
+    setCategoria(name);
+    setCreatingCategoria(false);
+    setNuovaCategoria("");
+  }
+
+  async function createDipendenteInline() {
+    const nome = nuovoDipendente.nome.trim();
+    const cognome = nuovoDipendente.cognome.trim();
+    if (!nome || !cognome) {
+      toast.error("Nome e cognome obbligatori");
+      return;
+    }
+    setCreatingEntity(true);
+    try {
+      const res = await fetch("/api/dipendenti", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nome, cognome }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Creazione dipendente fallita");
+      const created = body.dipendente as Dipendente;
+      setDipendenti((current) =>
+        current.some((item) => item.id === created.id)
+          ? current
+          : [...current, created].sort((a, b) =>
+              `${a.cognome} ${a.nome}`.localeCompare(`${b.cognome} ${b.nome}`, "it")
+            )
+      );
+      setDipendenteId(created.id);
+      setCreatingDipendente(false);
+      setNuovoDipendente({ nome: "", cognome: "" });
+      if (body.credenziali) {
+        toast.success(
+          `Dipendente creato. Login: ${body.credenziali.utente} / ${body.credenziali.password}`
+        );
+      } else {
+        toast.success(`Dipendente ${created.cognome} ${created.nome} pronto`);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Creazione fallita");
+    } finally {
+      setCreatingEntity(false);
+    }
+  }
+
+  async function createAutomezzoInline() {
+    const targa = nuovoAutomezzo.targa.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+    if (!targa) {
+      toast.error("Targa obbligatoria");
+      return;
+    }
+    setCreatingEntity(true);
+    try {
+      const res = await fetch("/api/automezzi", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targa,
+          descrizione: nuovoAutomezzo.descrizione.trim() || null,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Creazione automezzo fallita");
+      const created = body.automezzo as Automezzo;
+      setAutomezzi((current) =>
+        current.some((item) => item.id === created.id)
+          ? current
+          : [...current, created].sort((a, b) => a.targa.localeCompare(b.targa, "it"))
+      );
+      setAutomezzoId(created.id);
+      setCreatingAutomezzo(false);
+      setNuovoAutomezzo({ targa: "", descrizione: "" });
+      toast.success(`Automezzo ${created.targa} creato`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Creazione fallita");
+    } finally {
+      setCreatingEntity(false);
+    }
+  }
 
   function addFiles(incoming: FileList | File[]) {
     const next = Array.from(incoming);
@@ -229,11 +382,23 @@ function UploadDialog({
 
   async function startUpload() {
     if (!files.length) return toast.error("Seleziona almeno un file");
+    if (creatingCategoria) {
+      return toast.error("Conferma o annulla la nuova categoria");
+    }
+    if (creatingDipendente) {
+      return toast.error("Crea o annulla il nuovo dipendente");
+    }
+    if (creatingAutomezzo) {
+      return toast.error("Crea o annulla il nuovo automezzo");
+    }
+    if (!categoria.trim()) {
+      return toast.error("Seleziona o crea una categoria");
+    }
     if (entityType === "DIPENDENTE" && !dipendenteId) {
-      return toast.error("Seleziona un dipendente");
+      return toast.error("Seleziona o crea un dipendente");
     }
     if (entityType === "AUTOMEZZO" && !automezzoId) {
-      return toast.error("Seleziona un automezzo");
+      return toast.error("Seleziona o crea un automezzo");
     }
 
     setUploading(true);
@@ -260,13 +425,15 @@ function UploadDialog({
     if (!errors.length) onOpenChange(false);
   }
 
+  const busy = uploading || creatingEntity;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Carica documenti</DialogTitle>
           <DialogDescription>
-            Scegli destinazione e categoria. Puoi caricare più file insieme.
+            Scegli o crea destinazione e categoria. Puoi caricare più file insieme.
           </DialogDescription>
         </DialogHeader>
 
@@ -276,14 +443,8 @@ function UploadDialog({
             <select
               className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm"
               value={entityType}
-              disabled={uploading}
-              onChange={(event) => {
-                const type = event.target.value as EntityTypeKey;
-                setEntityType(type);
-                setCategoria(categorieForEntity(type)[0] ?? "ALTRO");
-                setDipendenteId("");
-                setAutomezzoId("");
-              }}
+              disabled={busy}
+              onChange={(event) => switchEntityType(event.target.value as EntityTypeKey)}
             >
               {(Object.keys(ENTITY_LABELS) as EntityTypeKey[]).map((key) => (
                 <option key={key} value={key}>
@@ -298,9 +459,17 @@ function UploadDialog({
               <Label>Dipendente</Label>
               <select
                 className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm"
-                value={dipendenteId}
-                disabled={uploading}
-                onChange={(event) => setDipendenteId(event.target.value)}
+                value={creatingDipendente ? NEW_DIPENDENTE_VALUE : dipendenteId}
+                disabled={busy}
+                onChange={(event) => {
+                  if (event.target.value === NEW_DIPENDENTE_VALUE) {
+                    setCreatingDipendente(true);
+                    setDipendenteId("");
+                    return;
+                  }
+                  setCreatingDipendente(false);
+                  setDipendenteId(event.target.value);
+                }}
               >
                 <option value="">Seleziona dipendente…</option>
                 {dipendenti.map((dipendente) => (
@@ -308,6 +477,7 @@ function UploadDialog({
                     {dipendente.cognome} {dipendente.nome}
                   </option>
                 ))}
+                <option value={NEW_DIPENDENTE_VALUE}>＋ Nuovo dipendente…</option>
               </select>
             </div>
           ) : entityType === "AUTOMEZZO" ? (
@@ -315,9 +485,17 @@ function UploadDialog({
               <Label>Automezzo</Label>
               <select
                 className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm"
-                value={automezzoId}
-                disabled={uploading}
-                onChange={(event) => setAutomezzoId(event.target.value)}
+                value={creatingAutomezzo ? NEW_AUTOMEZZO_VALUE : automezzoId}
+                disabled={busy}
+                onChange={(event) => {
+                  if (event.target.value === NEW_AUTOMEZZO_VALUE) {
+                    setCreatingAutomezzo(true);
+                    setAutomezzoId("");
+                    return;
+                  }
+                  setCreatingAutomezzo(false);
+                  setAutomezzoId(event.target.value);
+                }}
               >
                 <option value="">Seleziona automezzo…</option>
                 {automezzi.map((automezzo) => (
@@ -326,6 +504,7 @@ function UploadDialog({
                     {automezzo.descrizione ? ` — ${automezzo.descrizione}` : ""}
                   </option>
                 ))}
+                <option value={NEW_AUTOMEZZO_VALUE}>＋ Nuovo automezzo…</option>
               </select>
             </div>
           ) : (
@@ -337,19 +516,146 @@ function UploadDialog({
             </div>
           )}
 
+          {creatingDipendente && (
+            <div className="space-y-3 rounded-xl border border-sky-200 bg-sky-50/50 p-3 sm:col-span-2">
+              <p className="text-sm font-medium text-sky-900">Nuovo dipendente</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="upload-cognome">Cognome</Label>
+                  <Input
+                    id="upload-cognome"
+                    value={nuovoDipendente.cognome}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setNuovoDipendente((current) => ({
+                        ...current,
+                        cognome: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="upload-nome">Nome</Label>
+                  <Input
+                    id="upload-nome"
+                    value={nuovoDipendente.nome}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setNuovoDipendente((current) => ({
+                        ...current,
+                        nome: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={busy}
+                  onClick={createDipendenteInline}
+                >
+                  <Plus className="mr-1.5 h-4 w-4" />
+                  Crea dipendente
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => {
+                    setCreatingDipendente(false);
+                    setNuovoDipendente({ nome: "", cognome: "" });
+                  }}
+                >
+                  Annulla
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {creatingAutomezzo && (
+            <div className="space-y-3 rounded-xl border border-sky-200 bg-sky-50/50 p-3 sm:col-span-2">
+              <p className="text-sm font-medium text-sky-900">Nuovo automezzo</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="upload-targa">Targa</Label>
+                  <Input
+                    id="upload-targa"
+                    value={nuovoAutomezzo.targa}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setNuovoAutomezzo((current) => ({
+                        ...current,
+                        targa: event.target.value.toUpperCase(),
+                      }))
+                    }
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="upload-descrizione">Descrizione (opzionale)</Label>
+                  <Input
+                    id="upload-descrizione"
+                    value={nuovoAutomezzo.descrizione}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setNuovoAutomezzo((current) => ({
+                        ...current,
+                        descrizione: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={busy}
+                  onClick={createAutomezzoInline}
+                >
+                  <Plus className="mr-1.5 h-4 w-4" />
+                  Crea automezzo
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => {
+                    setCreatingAutomezzo(false);
+                    setNuovoAutomezzo({ targa: "", descrizione: "" });
+                  }}
+                >
+                  Annulla
+                </Button>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <Label>Categoria</Label>
             <select
               className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm"
-              value={categoria}
-              disabled={uploading}
-              onChange={(event) => setCategoria(event.target.value)}
+              value={creatingCategoria ? NEW_CATEGORY_VALUE : categoria}
+              disabled={busy}
+              onChange={(event) => {
+                if (event.target.value === NEW_CATEGORY_VALUE) {
+                  setCreatingCategoria(true);
+                  setNuovaCategoria("");
+                  return;
+                }
+                setCreatingCategoria(false);
+                setCategoria(event.target.value);
+              }}
             >
               {categories.map((item) => (
                 <option key={item} value={item}>
                   {item}
                 </option>
               ))}
+              <option value={NEW_CATEGORY_VALUE}>＋ Nuova categoria…</option>
             </select>
           </div>
 
@@ -358,10 +664,55 @@ function UploadDialog({
             <Input
               type="date"
               value={dataScadenza}
-              disabled={uploading}
+              disabled={busy}
               onChange={(event) => setDataScadenza(event.target.value)}
             />
           </div>
+
+          {creatingCategoria && (
+            <div className="space-y-3 rounded-xl border border-sky-200 bg-sky-50/50 p-3 sm:col-span-2">
+              <p className="text-sm font-medium text-sky-900">Nuova categoria</p>
+              <div className="space-y-1.5">
+                <Label htmlFor="upload-categoria">Nome categoria</Label>
+                <Input
+                  id="upload-categoria"
+                  placeholder="es. TERMICO, VISITE MEDICHE…"
+                  value={nuovaCategoria}
+                  disabled={busy}
+                  onChange={(event) => setNuovaCategoria(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      confirmNuovaCategoria();
+                    }
+                  }}
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={busy}
+                  onClick={confirmNuovaCategoria}
+                >
+                  <Plus className="mr-1.5 h-4 w-4" />
+                  Usa questa categoria
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => {
+                    setCreatingCategoria(false);
+                    setNuovaCategoria("");
+                  }}
+                >
+                  Annulla
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div
@@ -395,7 +746,7 @@ function UploadDialog({
             type="button"
             variant="outline"
             size="sm"
-            disabled={uploading}
+            disabled={busy}
             onClick={() => inputRef.current?.click()}
           >
             Scegli file
@@ -412,7 +763,7 @@ function UploadDialog({
                 <FileText className="h-4 w-4 shrink-0 text-gray-500" />
                 <span className="min-w-0 flex-1 truncate">{file.name}</span>
                 <span className="text-xs text-gray-400">{formatSize(file.size)}</span>
-                {!uploading && (
+                {!busy && (
                   <button
                     type="button"
                     aria-label={`Rimuovi ${file.name}`}
@@ -429,10 +780,10 @@ function UploadDialog({
         )}
 
         <DialogFooter>
-          <Button variant="outline" disabled={uploading} onClick={() => onOpenChange(false)}>
+          <Button variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>
             Annulla
           </Button>
-          <Button disabled={uploading || files.length === 0} onClick={startUpload}>
+          <Button disabled={busy || files.length === 0} onClick={startUpload}>
             {uploading
               ? `Caricamento ${progress}/${files.length}…`
               : `Carica${files.length > 1 ? ` ${files.length} file` : ""}`}
@@ -443,65 +794,235 @@ function UploadDialog({
   );
 }
 
+function isEntityType(value: string | null): value is EntityTypeKey {
+  return value === "AZIENDA" || value === "DIPENDENTE" || value === "AUTOMEZZO";
+}
+
+function collectCategoriesFromTree(tree: TreeNode[]): Record<EntityTypeKey, string[]> {
+  const result: Record<EntityTypeKey, string[]> = {
+    AZIENDA: [],
+    DIPENDENTE: [],
+    AUTOMEZZO: [],
+  };
+  const seen: Record<EntityTypeKey, Set<string>> = {
+    AZIENDA: new Set(),
+    DIPENDENTE: new Set(),
+    AUTOMEZZO: new Set(),
+  };
+
+  function walk(nodes: TreeNode[], entityType?: EntityTypeKey) {
+    for (const node of nodes) {
+      const type = node.entityType ?? entityType;
+      if (type && node.categoria && !seen[type].has(node.categoria)) {
+        seen[type].add(node.categoria);
+        result[type].push(node.categoria);
+      }
+      if (node.children?.length) walk(node.children, type);
+    }
+  }
+
+  walk(tree);
+  return result;
+}
+
+function findDestination(
+  tree: TreeNode[],
+  section: EntityTypeKey | null,
+  dipendenteId: string | null,
+  automezzoId: string | null
+): TreeNode | null {
+  if (!section || section === "AZIENDA") return null;
+  const root = tree.find((node) => node.entityType === section);
+  if (!root?.children) return null;
+  if (dipendenteId) {
+    return root.children.find((node) => node.dipendenteId === dipendenteId) ?? null;
+  }
+  if (automezzoId) {
+    return root.children.find((node) => node.automezzoId === automezzoId) ?? null;
+  }
+  return null;
+}
+
 export default function DocumentiWorkspace() {
   const { data: session } = useSession();
   const isAdmin = session?.user?.role === "ADMIN";
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [navReady, setNavReady] = useState(false);
+
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [total, setTotal] = useState(0);
   const [documents, setDocuments] = useState<Documento[]>([]);
   const [listTotal, setListTotal] = useState(0);
-  const [section, setSection] = useState<EntityTypeKey | null>(null);
+  const [section, setSection] = useState<EntityTypeKey | null>(() => {
+    const value = searchParams.get("section");
+    return isEntityType(value) ? value : null;
+  });
   const [destination, setDestination] = useState<TreeNode | null>(null);
-  const [category, setCategory] = useState<string | null>(null);
+  const [category, setCategory] = useState<string | null>(
+    () => searchParams.get("categoria")
+  );
   const [navigationSearch, setNavigationSearch] = useState("");
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [status, setStatus] = useState("");
-  const [expiry, setExpiry] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
+  const [debouncedSearch, setDebouncedSearch] = useState(
+    () => searchParams.get("q") ?? ""
+  );
+  const [status, setStatus] = useState(() => searchParams.get("stato") ?? "");
+  const [expiry, setExpiry] = useState(() => searchParams.get("scadenza") ?? "");
+  const [loading, setLoading] = useState(false);
+  const [treeLoading, setTreeLoading] = useState(true);
   const [uploadOpen, setUploadOpen] = useState(false);
   const requestId = useRef(0);
+
+  const knownCategories = useMemo(() => collectCategoriesFromTree(tree), [tree]);
+
+  useEffect(() => {
+    setNavReady(true);
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => window.clearTimeout(timer);
   }, [search]);
 
-  const fetchTree = useCallback(async () => {
-    const response = await fetch("/api/documenti/albero");
-    const body = await response.json();
-    if (response.ok) {
-      setTree(body.tree ?? []);
-      setTotal(body.total ?? 0);
+  // Keep URL in sync so "indietro" ripristina categoria/destinazione
+  useEffect(() => {
+    if (!navReady) return;
+    const params = new URLSearchParams();
+    if (section) params.set("section", section);
+    if (category) params.set("categoria", category);
+    if (destination?.dipendenteId) params.set("dipendenteId", destination.dipendenteId);
+    if (destination?.automezzoId) params.set("automezzoId", destination.automezzoId);
+    if (status) params.set("stato", status);
+    if (expiry) params.set("scadenza", expiry);
+    if (debouncedSearch) params.set("q", debouncedSearch);
+    const next = params.toString();
+    const current = searchParams.toString();
+    if (next !== current) {
+      router.replace(next ? `/documenti?${next}` : "/documenti", { scroll: false });
+    }
+  }, [
+    navReady,
+    section,
+    category,
+    destination,
+    status,
+    expiry,
+    debouncedSearch,
+    router,
+    searchParams,
+  ]);
+
+  const returnQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    if (section) params.set("section", section);
+    if (category) params.set("categoria", category);
+    if (destination?.dipendenteId) params.set("dipendenteId", destination.dipendenteId);
+    if (destination?.automezzoId) params.set("automezzoId", destination.automezzoId);
+    if (status) params.set("stato", status);
+    if (expiry) params.set("scadenza", expiry);
+    if (debouncedSearch) params.set("q", debouncedSearch);
+    return params.toString();
+  }, [section, category, destination, status, expiry, debouncedSearch]);
+
+  const hasDocumentScope = Boolean(
+    debouncedSearch ||
+      status ||
+      expiry ||
+      (section === "AZIENDA" && category) ||
+      (section === "DIPENDENTE" && destination) ||
+      (section === "AUTOMEZZO" && destination)
+  );
+
+  const fetchTree = useCallback(async (force = false) => {
+    if (!force) {
+      const cached = getCachedTree<{ tree: TreeNode[]; total: number }>();
+      if (cached) {
+        setTree(cached.tree);
+        setTotal(cached.total);
+        setTreeLoading(false);
+        return;
+      }
+    }
+    setTreeLoading(true);
+    try {
+      const response = await fetch("/api/documenti/albero");
+      const body = await response.json();
+      if (response.ok) {
+        const next = { tree: (body.tree ?? []) as TreeNode[], total: body.total ?? 0 };
+        setTree(next.tree);
+        setTotal(next.total);
+        setCachedTree(next);
+      }
+    } finally {
+      setTreeLoading(false);
     }
   }, []);
 
-  const fetchDocuments = useCallback(async () => {
-    const currentRequest = ++requestId.current;
-    setLoading(true);
-    const params = new URLSearchParams({ limit: "100" });
-    if (section) params.set("entityType", section);
-    if (destination?.dipendenteId) params.set("dipendenteId", destination.dipendenteId);
-    if (destination?.automezzoId) params.set("automezzoId", destination.automezzoId);
-    if (category) params.set("categoria", category);
-    if (debouncedSearch) params.set("search", debouncedSearch);
-    if (status) params.set("statoValidita", status);
-    if (expiry) params.set("scadenza", expiry);
+  const fetchDocuments = useCallback(
+    async (force = false) => {
+      if (!hasDocumentScope) {
+        setDocuments([]);
+        setListTotal(0);
+        setLoading(false);
+        return;
+      }
 
-    try {
-      const response = await fetch(`/api/documenti?${params}`);
-      const body = await response.json();
-      if (currentRequest !== requestId.current) return;
-      setDocuments(body.documenti ?? []);
-      setListTotal(body.total ?? 0);
-    } finally {
-      if (currentRequest === requestId.current) setLoading(false);
-    }
-  }, [section, destination, category, debouncedSearch, status, expiry]);
+      const params = new URLSearchParams({ limit: "100" });
+      if (section) params.set("entityType", section);
+      if (destination?.dipendenteId) params.set("dipendenteId", destination.dipendenteId);
+      if (destination?.automezzoId) params.set("automezzoId", destination.automezzoId);
+      if (category) params.set("categoria", category);
+      if (debouncedSearch) params.set("search", debouncedSearch);
+      if (status) params.set("statoValidita", status);
+      if (expiry) params.set("scadenza", expiry);
+      const queryKey = params.toString();
+
+      if (!force) {
+        const cached = getCachedList<{ documenti: Documento[]; total: number }>(queryKey);
+        if (cached) {
+          setDocuments(cached.documenti);
+          setListTotal(cached.total);
+          setLoading(false);
+          return;
+        }
+      }
+
+      const currentRequest = ++requestId.current;
+      setLoading(true);
+      try {
+        const response = await fetch(`/api/documenti?${queryKey}`);
+        const body = await response.json();
+        if (currentRequest !== requestId.current) return;
+        const next = {
+          documenti: (body.documenti ?? []) as Documento[],
+          total: body.total ?? 0,
+        };
+        setDocuments(next.documenti);
+        setListTotal(next.total);
+        setCachedList(queryKey, next);
+      } finally {
+        if (currentRequest === requestId.current) setLoading(false);
+      }
+    },
+    [hasDocumentScope, section, destination, category, debouncedSearch, status, expiry]
+  );
 
   useEffect(() => {
     fetchTree();
   }, [fetchTree]);
+
+  // Resolve dipendente/automezzo from URL after tree is available
+  useEffect(() => {
+    if (!tree.length) return;
+    const dipendenteId = searchParams.get("dipendenteId");
+    const automezzoId = searchParams.get("automezzoId");
+    if (!dipendenteId && !automezzoId) return;
+    const found = findDestination(tree, section, dipendenteId, automezzoId);
+    if (found && found.key !== destination?.key) {
+      setDestination(found);
+    }
+  }, [tree, section, searchParams, destination?.key]);
 
   useEffect(() => {
     fetchDocuments();
@@ -513,17 +1034,20 @@ export default function DocumentiWorkspace() {
     node.label.toLocaleLowerCase("it").includes(navigationSearch.toLocaleLowerCase("it"))
   );
   const categories =
-    section === "AZIENDA"
-      ? navigationItems
-      : destination?.children ?? [];
+    section === "AZIENDA" ? navigationItems : destination?.children ?? [];
 
-  const title = destination?.label ?? (section ? SECTION_CONFIG[section].label : "Tutti i documenti");
+  const title =
+    category ??
+    destination?.label ??
+    (section ? SECTION_CONFIG[section].label : "Archivio documenti");
 
   function chooseSection(next: EntityTypeKey | null) {
     setSection(next);
     setDestination(null);
     setCategory(null);
     setNavigationSearch("");
+    setDocuments([]);
+    setListTotal(0);
   }
 
   function chooseNavigation(node: TreeNode) {
@@ -537,8 +1061,9 @@ export default function DocumentiWorkspace() {
   }
 
   function refresh() {
-    fetchTree();
-    fetchDocuments();
+    invalidateDocumentiCache();
+    fetchTree(true);
+    fetchDocuments(true);
   }
 
   return (
@@ -571,10 +1096,14 @@ export default function DocumentiWorkspace() {
             <span className="rounded-lg bg-sky-50 p-2 text-sky-700">
               <Archive className="h-5 w-5" />
             </span>
-            <span className="text-xl font-bold tabular-nums">{total}</span>
+            <span className="text-xl font-bold tabular-nums">
+              {treeLoading ? "…" : total}
+            </span>
           </div>
-          <p className="mt-3 font-semibold">Tutto</p>
-          <p className="hidden text-xs text-gray-500 sm:block">Archivio completo</p>
+          <p className="mt-3 font-semibold">Documenti totali</p>
+          <p className="hidden text-xs text-gray-500 sm:block">
+            Tutti i file in archivio
+          </p>
         </button>
 
         {(Object.keys(SECTION_CONFIG) as EntityTypeKey[]).map((key) => {
@@ -606,6 +1135,42 @@ export default function DocumentiWorkspace() {
         })}
       </div>
 
+      <div className="rounded-xl border bg-white p-3 sm:p-4">
+        <div className="flex flex-col gap-2 md:flex-row">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Input
+              className="pl-9"
+              placeholder="Cerca per titolo, categoria o percorso…"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </div>
+          <select
+            aria-label="Filtra per stato"
+            className="h-9 rounded-lg border border-input bg-background px-3 text-sm"
+            value={status}
+            onChange={(event) => setStatus(event.target.value)}
+          >
+            <option value="">Tutti gli stati</option>
+            <option value="VALIDO">Validi</option>
+            <option value="DA_REVISIONARE">Da revisionare</option>
+            <option value="SCADUTO">Scaduti</option>
+            <option value="ARCHIVIATO">Archiviati</option>
+          </select>
+          <select
+            aria-label="Filtra per scadenza"
+            className="h-9 rounded-lg border border-input bg-background px-3 text-sm"
+            value={expiry}
+            onChange={(event) => setExpiry(event.target.value)}
+          >
+            <option value="">Tutte le scadenze</option>
+            <option value="presenti">Con scadenza</option>
+            <option value="mancanti">Senza scadenza</option>
+          </select>
+        </div>
+      </div>
+
       <div
         className={cn(
           "grid gap-4",
@@ -624,8 +1189,8 @@ export default function DocumentiWorkspace() {
               </p>
               <p className="text-xs text-gray-500">
                 {section === "AZIENDA"
-                  ? "Seleziona una raccolta"
-                  : "Seleziona per vedere i documenti"}
+                  ? "Apri una categoria per vedere i file"
+                  : "Seleziona per filtrare i documenti"}
               </p>
             </div>
             {section !== "AZIENDA" && (
@@ -647,6 +1212,8 @@ export default function DocumentiWorkspace() {
                 onClick={() => {
                   setDestination(null);
                   setCategory(null);
+                  setDocuments([]);
+                  setListTotal(0);
                 }}
                 className={cn(
                   "mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-50",
@@ -654,7 +1221,9 @@ export default function DocumentiWorkspace() {
                 )}
               >
                 <Folder className="h-4 w-4" />
-                <span className="flex-1">Tutti</span>
+                <span className="flex-1">
+                  {section === "AZIENDA" ? "Scegli categoria…" : "Scegli…"}
+                </span>
                 <span className="text-xs text-gray-400">{activeRoot?.count ?? 0}</span>
               </button>
               {filteredNavigation.map((node) => {
@@ -690,7 +1259,11 @@ export default function DocumentiWorkspace() {
               <div className="min-w-0">
                 <h2 className="truncate text-lg font-semibold">{title}</h2>
                 <p className="text-sm text-gray-500">
-                  {listTotal} {listTotal === 1 ? "documento" : "documenti"}
+                  {hasDocumentScope
+                    ? `${listTotal} ${listTotal === 1 ? "documento" : "documenti"}`
+                    : section
+                      ? "Seleziona una voce a sinistra per caricare l’elenco"
+                      : "Cerca qui sopra oppure scegli un archivio"}
                 </p>
               </div>
               {isAdmin && section && (
@@ -701,7 +1274,7 @@ export default function DocumentiWorkspace() {
               )}
             </div>
 
-            {categories.length > 0 && section !== "AZIENDA" && (
+            {categories.length > 0 && section !== "AZIENDA" && destination && (
               <div className="flex gap-2 overflow-x-auto pb-1">
                 <button
                   type="button"
@@ -732,43 +1305,27 @@ export default function DocumentiWorkspace() {
                 ))}
               </div>
             )}
-
-            <div className="flex flex-col gap-2 md:flex-row">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <Input
-                  className="pl-9"
-                  placeholder="Cerca per nome, categoria o percorso…"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                />
-              </div>
-              <select
-                aria-label="Filtra per stato"
-                className="h-9 rounded-lg border border-input bg-background px-3 text-sm"
-                value={status}
-                onChange={(event) => setStatus(event.target.value)}
-              >
-                <option value="">Tutti gli stati</option>
-                <option value="VALIDO">Validi</option>
-                <option value="DA_REVISIONARE">Da revisionare</option>
-                <option value="SCADUTO">Scaduti</option>
-                <option value="ARCHIVIATO">Archiviati</option>
-              </select>
-              <select
-                aria-label="Filtra per scadenza"
-                className="h-9 rounded-lg border border-input bg-background px-3 text-sm"
-                value={expiry}
-                onChange={(event) => setExpiry(event.target.value)}
-              >
-                <option value="">Tutte le scadenze</option>
-                <option value="presenti">Con scadenza</option>
-                <option value="mancanti">Senza scadenza</option>
-              </select>
-            </div>
           </div>
 
-          {loading ? (
+          {!hasDocumentScope ? (
+            <div className="flex min-h-72 flex-col items-center justify-center px-6 text-center">
+              <span className="mb-3 rounded-full bg-sky-50 p-3 text-sky-700">
+                <Search className="h-6 w-6" />
+              </span>
+              <p className="font-medium">
+                {section ? "Nessuna selezione attiva" : "Cerca un documento"}
+              </p>
+              <p className="mt-1 max-w-sm text-sm text-gray-500">
+                {section === "AZIENDA"
+                  ? "Scegli una categoria (es. CCIAA, DURC) per vedere solo quei documenti."
+                  : section === "DIPENDENTE"
+                    ? "Seleziona un dipendente, poi eventualmente una categoria."
+                    : section === "AUTOMEZZO"
+                      ? "Seleziona un automezzo per vedere libretti e assicurazioni."
+                      : "Usa la barra di ricerca e i filtri, oppure apri Azienda, Dipendenti o Automezzi."}
+              </p>
+            </div>
+          ) : loading ? (
             <div className="flex min-h-72 items-center justify-center">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-sky-700 border-t-transparent" />
             </div>
@@ -784,48 +1341,53 @@ export default function DocumentiWorkspace() {
             </div>
           ) : (
             <div className="divide-y">
-              {documents.map((documento) => (
-                <Link
-                  key={documento.id}
-                  href={`/documenti/${documento.id}`}
-                  className="group flex items-center gap-3 px-4 py-3 transition hover:bg-gray-50 sm:px-5"
-                >
-                  <span className="rounded-lg bg-sky-50 p-2.5 text-sky-700">
-                    <FileText className="h-5 w-5" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-gray-900 group-hover:text-sky-800">
-                      {documento.titoloOriginale}
-                    </p>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
-                      <span>{entityLabel(documento)}</span>
-                      <span>{documento.categoria}</span>
-                      <span>{formatSize(documento.sizeBytes)}</span>
-                      {documento.dataScadenza && (
-                        <span className="flex items-center gap-1">
-                          <CalendarClock className="h-3.5 w-3.5" />
-                          {new Date(documento.dataScadenza).toLocaleDateString("it-IT")}
-                        </span>
-                      )}
-                      {documento.aiWhitelist && (
-                        <span className="flex items-center gap-1 text-violet-600">
-                          <ShieldCheck className="h-3.5 w-3.5" />
-                          AI
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <span
-                    className={cn(
-                      "hidden rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset sm:inline-flex",
-                      statusStyle(documento.statoValidita)
-                    )}
+              {documents.map((documento) => {
+                const href = returnQuery
+                  ? `/documenti/${documento.id}?return=${encodeURIComponent(returnQuery)}`
+                  : `/documenti/${documento.id}`;
+                return (
+                  <Link
+                    key={documento.id}
+                    href={href}
+                    className="group flex items-center gap-3 px-4 py-3 transition hover:bg-gray-50 sm:px-5"
                   >
-                    {documento.statoValidita.replaceAll("_", " ")}
-                  </span>
-                  <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-sky-600" />
-                </Link>
-              ))}
+                    <span className="rounded-lg bg-sky-50 p-2.5 text-sky-700">
+                      <FileText className="h-5 w-5" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-gray-900 group-hover:text-sky-800">
+                        {documento.titoloOriginale}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+                        <span>{entityLabel(documento)}</span>
+                        <span>{documento.categoria}</span>
+                        <span>{formatSize(documento.sizeBytes)}</span>
+                        {documento.dataScadenza && (
+                          <span className="flex items-center gap-1">
+                            <CalendarClock className="h-3.5 w-3.5" />
+                            {new Date(documento.dataScadenza).toLocaleDateString("it-IT")}
+                          </span>
+                        )}
+                        {documento.aiWhitelist && (
+                          <span className="flex items-center gap-1 text-violet-600">
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            AI
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <span
+                      className={cn(
+                        "hidden rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset sm:inline-flex",
+                        statusStyle(documento.statoValidita)
+                      )}
+                    >
+                      {documento.statoValidita.replaceAll("_", " ")}
+                    </span>
+                    <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-sky-600" />
+                  </Link>
+                );
+              })}
               {listTotal > documents.length && (
                 <div className="px-4 py-3 text-center text-xs text-gray-500">
                   Mostrati i primi {documents.length} di {listTotal} documenti
@@ -843,6 +1405,7 @@ export default function DocumentiWorkspace() {
           section={section}
           destination={destination}
           categoriaPreset={category}
+          knownCategories={knownCategories}
           onUploaded={refresh}
         />
       )}
