@@ -445,6 +445,7 @@ export const CLIENTI_PORTFOLIO: ClientePortfolio[] = [
     cap: "20152",
     citta: "Milano",
     provincia: "MI",
+    telFisso: "800 650650",
     note1: "Portfolio: Carrefour",
   },
   {
