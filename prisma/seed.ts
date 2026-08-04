@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import bcrypt from "bcryptjs";
+import { CLIENTI_PORTFOLIO } from "./data/clienti-portfolio";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -23,6 +24,39 @@ const DEFAULT_MARCHE = [
   "Siemens",
   "Legrand",
 ];
+
+async function seedClientiPortfolio() {
+  let created = 0;
+  let updated = 0;
+
+  for (const c of CLIENTI_PORTFOLIO) {
+    const data = {
+      ragioneSociale: c.ragioneSociale,
+      indirizzo: c.indirizzo ?? null,
+      cap: c.cap ?? null,
+      citta: c.citta ?? null,
+      provincia: c.provincia ?? null,
+      telFisso: c.telFisso ?? null,
+      email: c.email ?? null,
+      note1: c.note1 ?? null,
+      sourceId: c.sourceId,
+    };
+
+    const existing = await prisma.cliente.findFirst({
+      where: { sourceId: c.sourceId },
+    });
+
+    if (existing) {
+      await prisma.cliente.update({ where: { id: existing.id }, data });
+      updated++;
+    } else {
+      await prisma.cliente.create({ data });
+      created++;
+    }
+  }
+
+  return { created, updated };
+}
 
 async function main() {
   console.log("🌱 Seeding Mistral Impianti...");
@@ -56,9 +90,14 @@ async function main() {
     });
   }
 
+  const clienti = await seedClientiPortfolio();
+
   console.log(`✅ Admin: ${admin.email}`);
   console.log("🔑 Password: admin123 (cambiala subito)");
   console.log(`✅ Marche catalogo: ${DEFAULT_MARCHE.length}`);
+  console.log(
+    `✅ Clienti portfolio lavori: ${CLIENTI_PORTFOLIO.length} (${clienti.created} creati, ${clienti.updated} aggiornati)`
+  );
 }
 
 main()

@@ -11,6 +11,7 @@
     "db:push": "prisma db push",
     "db:sync": "node --env-file=.env prisma/sync-schema.mjs",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:clienti-portfolio": "tsx scripts/seed-clienti-portfolio.ts",
     "import:documenti": "tsx scripts/import-documenti.ts",
     "import:documenti:dry": "tsx scripts/import-documenti.ts --dry-run",
     "backfill:scadenze": "tsx scripts/backfill-scadenze.ts",
