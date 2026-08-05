@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { it } from "date-fns/locale";
@@ -11,8 +12,10 @@ import {
   ArrowLeft,
   ArrowUpFromLine,
   Pencil,
+  RotateCcw,
   ScanLine,
   SlidersHorizontal,
+  Trash2,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +55,9 @@ interface Articolo {
 
 export default function ArticoloDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === "ADMIN";
   const [articolo, setArticolo] = useState<Articolo | null>(null);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
@@ -164,6 +170,45 @@ export default function ArticoloDetailPage() {
     setMoveOpen(null);
     setQty("1");
     setNote("");
+    setRefreshKey((k) => k + 1);
+  }
+
+  async function onDelete() {
+    if (!articolo) return;
+    if (
+      !confirm(
+        `Eliminare l'articolo "${articolo.nome}" dal magazzino?\nVerrà disattivato e non apparirà più in elenco.`
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    const res = await fetch(`/api/magazzino/${id}`, { method: "DELETE" });
+    setBusy(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      toast.error(typeof data.error === "string" ? data.error : "Eliminazione non riuscita");
+      return;
+    }
+    toast.success("Articolo eliminato dal magazzino");
+    router.push("/magazzino");
+  }
+
+  async function onReactivate() {
+    if (!articolo) return;
+    setBusy(true);
+    const res = await fetch(`/api/magazzino/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ attivo: true }),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      toast.error(typeof data.error === "string" ? data.error : "Riattivazione non riuscita");
+      return;
+    }
+    toast.success("Articolo riattivato");
     setRefreshKey((k) => k + 1);
   }
 
@@ -285,6 +330,23 @@ export default function ArticoloDetailPage() {
           <ScanLine className="h-4 w-4 mr-2" />
           Scanner
         </Link>
+        {isAdmin && articolo.attivo && (
+          <Button
+            variant="outline"
+            className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+            onClick={onDelete}
+            disabled={busy}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Elimina
+          </Button>
+        )}
+        {isAdmin && !articolo.attivo && (
+          <Button variant="outline" onClick={onReactivate} disabled={busy}>
+            <RotateCcw className="h-4 w-4 mr-2" />
+            Riattiva
+          </Button>
+        )}
       </div>
 
       <div>

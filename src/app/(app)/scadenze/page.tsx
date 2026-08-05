@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -99,8 +100,36 @@ function entityLabel(doc: DocumentoRow) {
   return null;
 }
 
+const TAB_VALUES: Tab[] = [
+  "da-classificare",
+  "prossime",
+  "con-scadenza",
+  "non-serve",
+];
+
+function parseTab(value: string | null): Tab {
+  if (value && TAB_VALUES.includes(value as Tab)) return value as Tab;
+  return "prossime";
+}
+
 export default function ScadenzePage() {
-  const [tab, setTab] = useState<Tab>("prossime");
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-80 items-center justify-center p-8">
+          <Loader2 className="h-7 w-7 animate-spin text-sky-600" />
+        </div>
+      }
+    >
+      <ScadenzeContent />
+    </Suspense>
+  );
+}
+
+function ScadenzeContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => parseTab(searchParams.get("tab")));
   const [documenti, setDocumenti] = useState<DocumentoRow[]>([]);
   const [scadenze, setScadenze] = useState<ScadenzaRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -118,6 +147,22 @@ export default function ScadenzePage() {
     nonServe: 0,
     urgenti: 0,
   });
+
+  const urlTab = parseTab(searchParams.get("tab"));
+  const [prevUrlTab, setPrevUrlTab] = useState(urlTab);
+  if (prevUrlTab !== urlTab) {
+    setPrevUrlTab(urlTab);
+    setTab(urlTab);
+  }
+
+  function changeTab(next: Tab) {
+    setTab(next);
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "prossime") params.delete("tab");
+    else params.set("tab", next);
+    const qs = params.toString();
+    router.replace(qs ? `/scadenze?${qs}` : "/scadenze", { scroll: false });
+  }
 
   // Reset quando cambia tab/ricerca: pattern React "adjust state during render"
   const tabSearchKey = `${tab}|${search}`;
@@ -381,7 +426,7 @@ export default function ScadenzePage() {
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <button
             type="button"
-            onClick={() => setTab("prossime")}
+            onClick={() => changeTab("prossime")}
             className="rounded-2xl border border-red-100 bg-white p-5 text-left shadow-sm shadow-slate-200/60 transition hover:border-red-200 hover:shadow-md"
           >
             <div className="flex items-center justify-between">
@@ -396,7 +441,11 @@ export default function ScadenzePage() {
               Urgenti · entro 7 giorni
             </p>
           </button>
-          <div className="rounded-2xl border border-amber-100 bg-white p-5 shadow-sm shadow-slate-200/60">
+          <button
+            type="button"
+            onClick={() => changeTab("da-classificare")}
+            className="rounded-2xl border border-amber-100 bg-white p-5 text-left shadow-sm shadow-slate-200/60 transition hover:border-amber-200 hover:shadow-md"
+          >
             <div className="flex items-center justify-between">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
                 <Clock3 className="h-5 w-5" />
@@ -406,8 +455,12 @@ export default function ScadenzePage() {
               {counts.daClassificare}
             </p>
             <p className="mt-1 text-sm text-slate-500">Da classificare</p>
-          </div>
-          <div className="rounded-2xl border border-sky-100 bg-white p-5 shadow-sm shadow-slate-200/60">
+          </button>
+          <button
+            type="button"
+            onClick={() => changeTab("con-scadenza")}
+            className="rounded-2xl border border-sky-100 bg-white p-5 text-left shadow-sm shadow-slate-200/60 transition hover:border-sky-200 hover:shadow-md"
+          >
             <div className="flex items-center justify-between">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
                 <CalendarClock className="h-5 w-5" />
@@ -417,8 +470,12 @@ export default function ScadenzePage() {
               {counts.conScadenza}
             </p>
             <p className="mt-1 text-sm text-slate-500">Con scadenza</p>
-          </div>
-          <div className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm shadow-slate-200/60">
+          </button>
+          <button
+            type="button"
+            onClick={() => changeTab("non-serve")}
+            className="rounded-2xl border border-emerald-100 bg-white p-5 text-left shadow-sm shadow-slate-200/60 transition hover:border-emerald-200 hover:shadow-md"
+          >
             <div className="flex items-center justify-between">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
                 <CalendarCheck className="h-5 w-5" />
@@ -428,7 +485,7 @@ export default function ScadenzePage() {
               {counts.nonServe}
             </p>
             <p className="mt-1 text-sm text-slate-500">Non serve scadenza</p>
-          </div>
+          </button>
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
@@ -439,7 +496,7 @@ export default function ScadenzePage() {
                   <button
                     key={item.value}
                     type="button"
-                    onClick={() => setTab(item.value)}
+                    onClick={() => changeTab(item.value)}
                     className={`rounded-lg px-3 py-2 text-xs font-medium transition ${
                       tab === item.value
                         ? "bg-white text-slate-950 shadow-sm"

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { PreventivoStatoBadge } from "@/components/preventivo-stato-badge";
 import {
@@ -23,15 +23,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useSession } from "next-auth/react";
-import { Download, Sparkles, Save } from "lucide-react";
+import { Download, Sparkles, Save, Trash2 } from "lucide-react";
 
 type Riga = PreventivoRigaForm;
 
 export default function PreventivoDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const { data: session } = useSession();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [fonti, setFonti] = useState<
@@ -158,6 +160,25 @@ export default function PreventivoDetailPage() {
     URL.revokeObjectURL(url);
   }
 
+  async function onDelete() {
+    if (
+      !confirm(
+        `Eliminare il preventivo ${numeroPreventivo}? L'operazione non è reversibile.`
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    const res = await fetch(`/api/preventivi/${id}`, { method: "DELETE" });
+    setDeleting(false);
+    if (!res.ok) {
+      toast.error("Eliminazione non riuscita");
+      return;
+    }
+    toast.success("Preventivo eliminato");
+    router.push("/preventivi");
+  }
+
   async function generaAi() {
     if (!aiPrompt.trim()) {
       toast.error("Inserisci una descrizione per l'AI");
@@ -227,11 +248,23 @@ export default function PreventivoDetailPage() {
           <Button variant="outline" onClick={() => exportFile("DOCX")}>
             <Download className="h-4 w-4 mr-1" /> DOCX
           </Button>
-          <Button onClick={() => save(false)} disabled={saving}>
+          <Button onClick={() => save(false)} disabled={saving || deleting}>
             <Save className="h-4 w-4 mr-1" /> Salva
           </Button>
-          <Button variant="secondary" onClick={() => save(true)} disabled={saving}>
+          <Button
+            variant="secondary"
+            onClick={() => save(true)}
+            disabled={saving || deleting}
+          >
             Salva versione
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={onDelete}
+            disabled={saving || deleting}
+          >
+            <Trash2 className="h-4 w-4 mr-1" />
+            {deleting ? "Eliminazione..." : "Elimina"}
           </Button>
         </div>
       </div>

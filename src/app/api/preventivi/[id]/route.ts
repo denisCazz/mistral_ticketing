@@ -172,3 +172,20 @@ export async function PUT(req: Request, { params }: Params) {
 
   return NextResponse.json(preventivo);
 }
+
+export async function DELETE(_req: Request, { params }: Params) {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { id } = await params;
+  const existing = await prisma.preventivo.findUnique({ where: { id } });
+  if (!existing) {
+    return NextResponse.json({ error: "Non trovato" }, { status: 404 });
+  }
+  if (!canAccessPreventivo(session, existing)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  await prisma.preventivo.delete({ where: { id } });
+  return NextResponse.json({ ok: true });
+}
