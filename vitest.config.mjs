@@ -6,15 +6,13 @@ export default defineConfig({
     environment: "node",
     include: ["src/**/*.test.ts"],
     pool: "threads",
-    poolOptions: {
-      threads: {
-        singleThread: true,
-      },
+    threads: {
+      singleThread: true,
     },
   },
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(import.meta.dirname, "./src"),
     },
   },
 });

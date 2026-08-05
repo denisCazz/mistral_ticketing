@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { normalizeLoginIdentifier } from "@/lib/dipendente-user";
+import { checkRateLimit, recordFailure, resetFailures } from "@/lib/rate-limit";
 
 const loginSchema = z.object({
   email: z.string().min(1),
@@ -63,6 +64,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           const { email: rawEmail, password } = parsed.data;
           const email = normalizeLoginIdentifier(rawEmail);
 
+          if (!checkRateLimit(email)) {
+            return null;
+          }
+
           const user = await prisma.user.findUnique({
             where: { email },
             select: {
@@ -75,10 +80,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             },
           });
 
-          if (!user || !user.active) return null;
+          if (!user || !user.active) {
+            recordFailure(email);
+            return null;
+          }
 
           const valid = await bcrypt.compare(password, user.passwordHash);
-          if (!valid) return null;
+          if (!valid) {
+            recordFailure(email);
+            return null;
+          }
+
+          resetFailures(email);
 
           return {
             id: user.id,

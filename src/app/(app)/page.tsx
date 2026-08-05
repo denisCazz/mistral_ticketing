@@ -40,10 +40,15 @@ export default function DashboardPage() {
   const [error, setError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
-  useEffect(() => {
-    const controller = new AbortController();
+  const [prevReloadKey, setPrevReloadKey] = useState(reloadKey);
+  if (prevReloadKey !== reloadKey) {
+    setPrevReloadKey(reloadKey);
     setLoading(true);
     setError(false);
+  }
+
+  useEffect(() => {
+    const controller = new AbortController();
 
     fetch("/api/dashboard", { signal: controller.signal })
       .then((r) => {

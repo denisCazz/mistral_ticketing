@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { PreventivoStatoBadge } from "@/components/preventivo-stato-badge";
@@ -48,22 +48,31 @@ function PreventiviContent() {
   const search = searchParams.get("search") ?? "";
   const page = parseInt(searchParams.get("page") ?? "1");
 
-  const fetchData = useCallback(async () => {
+  const queryKey = `${stato}|${search}|${page}`;
+  const [prevQueryKey, setPrevQueryKey] = useState(queryKey);
+  if (prevQueryKey !== queryKey) {
+    setPrevQueryKey(queryKey);
     setLoading(true);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
     const params = new URLSearchParams();
     if (stato) params.set("stato", stato);
     if (search) params.set("search", search);
     params.set("page", String(page));
-    const res = await fetch(`/api/preventivi?${params}`);
-    const data = await res.json();
-    setPreventivi(data.preventivi ?? []);
-    setTotalPages(data.totalPages ?? 1);
-    setLoading(false);
+    fetch(`/api/preventivi?${params}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        setPreventivi(data.preventivi ?? []);
+        setTotalPages(data.totalPages ?? 1);
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [stato, search, page]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
 
   return (
     <div className="p-6 space-y-6">

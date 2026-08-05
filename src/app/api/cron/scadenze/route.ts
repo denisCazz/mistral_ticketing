@@ -24,9 +24,14 @@ export async function POST(req: Request) {
   let sent = 0;
   let skipped = 0;
 
+  // Soglie in ordine crescente: si sceglie la più urgente già raggiunta
+  // (giorni <= soglia). La finestra, non il match esatto, rende gli alert
+  // resilienti a giorni di cron saltati.
+  const soglieAsc = [...ALERT_GIORNI_PRIMA].sort((a, b) => a - b);
+
   for (const scadenza of scadenze) {
     const giorni = giorniFinoScadenza(scadenza.dataScadenza);
-    const match = ALERT_GIORNI_PRIMA.find((g) => giorni === g);
+    const match = soglieAsc.find((g) => giorni <= g);
     if (!match) {
       skipped++;
       continue;
@@ -37,9 +42,6 @@ export async function POST(req: Request) {
         scadenzaId: scadenza.id,
         giorniPrima: match,
         success: true,
-        inviatoAt: {
-          gte: new Date(new Date().setHours(0, 0, 0, 0)),
-        },
       },
     });
     if (already) {

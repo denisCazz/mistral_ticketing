@@ -50,7 +50,17 @@ export default function UtentiPage() {
     if (res.ok) setUsers(await res.json());
   }
 
-  useEffect(() => { fetchUsers(); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/utenti")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data) setUsers(data);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function createUser(e: React.FormEvent) {
     e.preventDefault();

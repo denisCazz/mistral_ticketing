@@ -36,6 +36,37 @@ export interface BarcodeScannerProps {
   className?: string;
 }
 
+async function queryCameraPermission(): Promise<PermissionState | "unknown"> {
+  try {
+    const status = await navigator.permissions.query({
+      name: "camera" as PermissionName,
+    });
+    return status.state;
+  } catch {
+    // Safari e alcuni browser non supportano la query per la fotocamera
+    return "unknown";
+  }
+}
+
+function cameraErrorMessage(err: unknown): string {
+  const name = err instanceof DOMException ? err.name : "";
+  switch (name) {
+    case "NotAllowedError":
+    case "PermissionDeniedError":
+      return "Permesso fotocamera negato nelle impostazioni del browser. Attivalo per questo sito e premi Riprova.";
+    case "NotFoundError":
+    case "DevicesNotFoundError":
+      return "Nessuna fotocamera trovata. Usa l'inserimento manuale.";
+    case "NotReadableError":
+    case "TrackStartError":
+      return "Fotocamera occupata da un'altra app. Chiudila e premi Riprova.";
+    case "SecurityError":
+      return "Accesso alla fotocamera bloccato: il sito deve essere aperto in HTTPS (o localhost).";
+    default:
+      return "Impossibile accedere alla fotocamera. Usa l'inserimento manuale.";
+  }
+}
+
 function beep() {
   try {
     const ctx = new AudioContext();
@@ -90,12 +121,18 @@ export function BarcodeScanner({ onScan, paused = false, className }: BarcodeSca
   const lastCodeRef = useRef<string>("");
   const lastAtRef = useRef<number>(0);
   const pausedRef = useRef(paused);
-  pausedRef.current = paused;
   const onScanRef = useRef(onScan);
-  onScanRef.current = onScan;
+  useEffect(() => {
+    pausedRef.current = paused;
+  }, [paused]);
+  useEffect(() => {
+    onScanRef.current = onScan;
+  }, [onScan]);
 
   const [engine, setEngine] = useState<ScanEngine>("none");
   const [error, setError] = useState<string | null>(null);
+  const [errorKind, setErrorKind] = useState<"permission" | "camera" | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
   const [torchOn, setTorchOn] = useState(false);
   const [torchSupported, setTorchSupported] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
@@ -122,7 +159,20 @@ export function BarcodeScanner({ onScan, paused = false, className }: BarcodeSca
 
     async function start() {
       setError(null);
+      setErrorKind(null);
       setReady(false);
+
+      // Se il permesso è già negato, non ripresentare il prompt: guida l'utente.
+      const perm = await queryCameraPermission();
+      if (cancelled) return;
+      if (perm === "denied") {
+        setErrorKind("permission");
+        setError(
+          "Permesso fotocamera negato. Attivalo nelle impostazioni del browser/app per questo sito e premi Riprova."
+        );
+        setManualOpen(true);
+        return;
+      }
 
       const chosen = await detectEngine();
       if (cancelled) return;
@@ -204,12 +254,14 @@ export function BarcodeScanner({ onScan, paused = false, className }: BarcodeSca
           );
         }
       } catch (err) {
-        const msg =
-          err instanceof Error ? err.message : "Impossibile accedere alla fotocamera";
+        const name = err instanceof DOMException ? err.name : "";
+        const isPermission =
+          name === "NotAllowedError" || name === "PermissionDeniedError";
+        setErrorKind(isPermission ? "permission" : "camera");
         setError(
-          msg.includes("Permission") || msg.includes("NotAllowed")
-            ? "Permesso fotocamera negato. Usa l'inserimento manuale."
-            : "Fotocamera non disponibile. Usa l'inserimento manuale."
+          isPermission
+            ? "Permesso fotocamera negato. Attivalo nelle impostazioni del browser/app per questo sito e premi Riprova."
+            : cameraErrorMessage(err)
         );
         setManualOpen(true);
       }
@@ -224,7 +276,7 @@ export function BarcodeScanner({ onScan, paused = false, className }: BarcodeSca
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };
-  }, [emit]);
+  }, [emit, retryKey]);
 
   async function toggleTorch() {
     const track = streamRef.current?.getVideoTracks()[0];
@@ -305,9 +357,27 @@ export function BarcodeScanner({ onScan, paused = false, className }: BarcodeSca
       )}
 
       {error && (
-        <div className="absolute inset-x-0 top-12 mx-3 flex items-start gap-2 rounded-lg bg-red-600/90 p-3 text-sm text-white">
-          <CameraOff className="h-4 w-4 mt-0.5 shrink-0" />
-          <span>{error}</span>
+        <div className="absolute inset-x-0 top-12 mx-3 flex flex-col gap-2 rounded-lg bg-red-600/90 p-3 text-sm text-white">
+          <div className="flex items-start gap-2">
+            <CameraOff className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>{error}</span>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              size="sm"
+              className="bg-white text-red-700 hover:bg-red-50"
+              onClick={() => setRetryKey((k) => k + 1)}
+            >
+              Riprova
+            </Button>
+            {errorKind === "permission" && (
+              <span className="self-center text-xs text-white/85">
+                Chrome Android: lucchetto accanto all&apos;indirizzo → Fotocamera.
+                iPhone: Impostazioni → Safari → Fotocamera.
+              </span>
+            )}
+          </div>
         </div>
       )}
 

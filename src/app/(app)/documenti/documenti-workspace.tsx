@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -146,13 +146,17 @@ function UploadDialog({
   onUploaded: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [entityType, setEntityType] = useState<EntityTypeKey>("AZIENDA");
-  const [categoria, setCategoria] = useState("CCIAA");
+  // Il dialog viene montato solo all'apertura: lo stato iniziale si calcola dalle props
+  const initialType: EntityTypeKey = section ?? "AZIENDA";
+  const [entityType, setEntityType] = useState<EntityTypeKey>(initialType);
+  const [categoria, setCategoria] = useState(
+    categoriaPreset ?? destination?.categoria ?? categorieForEntity(initialType)[0] ?? "ALTRO"
+  );
   const [customCategories, setCustomCategories] = useState<string[]>([]);
   const [creatingCategoria, setCreatingCategoria] = useState(false);
   const [nuovaCategoria, setNuovaCategoria] = useState("");
-  const [dipendenteId, setDipendenteId] = useState("");
-  const [automezzoId, setAutomezzoId] = useState("");
+  const [dipendenteId, setDipendenteId] = useState(destination?.dipendenteId ?? "");
+  const [automezzoId, setAutomezzoId] = useState(destination?.automezzoId ?? "");
   const [creatingDipendente, setCreatingDipendente] = useState(false);
   const [nuovoDipendente, setNuovoDipendente] = useState({ nome: "", cognome: "" });
   const [creatingAutomezzo, setCreatingAutomezzo] = useState(false);
@@ -167,33 +171,19 @@ function UploadDialog({
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
-    if (!open) return;
-    const nextType = section ?? "AZIENDA";
-    const nextCategoria =
-      categoriaPreset ?? destination?.categoria ?? categorieForEntity(nextType)[0] ?? "ALTRO";
-    setEntityType(nextType);
-    setCategoria(nextCategoria);
-    setCustomCategories([]);
-    setCreatingCategoria(false);
-    setNuovaCategoria("");
-    setDipendenteId(destination?.dipendenteId ?? "");
-    setAutomezzoId(destination?.automezzoId ?? "");
-    setCreatingDipendente(false);
-    setNuovoDipendente({ nome: "", cognome: "" });
-    setCreatingAutomezzo(false);
-    setNuovoAutomezzo({ targa: "", descrizione: "" });
-    setDataScadenza("");
-    setFiles([]);
-    setProgress(0);
-
+    let cancelled = false;
     Promise.all([
       fetch("/api/dipendenti").then((r) => (r.ok ? r.json() : { dipendenti: [] })),
       fetch("/api/automezzi").then((r) => (r.ok ? r.json() : { automezzi: [] })),
     ]).then(([dip, auto]) => {
+      if (cancelled) return;
       setDipendenti(dip.dipendenti ?? []);
       setAutomezzi(auto.automezzi ?? []);
     });
-  }, [open, section, destination, categoriaPreset]);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const categories = useMemo(() => {
     const base = categorieForEntity(entityType);
@@ -333,12 +323,15 @@ function UploadDialog({
     const extension = file.name.includes(".")
       ? file.name.split(".").pop()!.toLowerCase()
       : "bin";
-    const entityId =
+    const entityId = (
       entityType === "DIPENDENTE"
         ? dipendenteId
         : entityType === "AUTOMEZZO"
           ? automezzoId
-          : categoria.toLowerCase().replace(/\s+/g, "-");
+          : categoria.toLowerCase().replace(/\s+/g, "-")
+    )
+      .replace(/[^a-z0-9_-]/gi, "")
+      .slice(0, 100);
 
     const presign = await fetch("/api/files/presign", {
       method: "POST",
@@ -848,13 +841,12 @@ export default function DocumentiWorkspace() {
   const isAdmin = session?.user?.role === "ADMIN";
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [navReady, setNavReady] = useState(false);
   const initialDestination = useRef({
     dipendenteId: searchParams.get("dipendenteId"),
     automezzoId: searchParams.get("automezzoId"),
   });
   const initialDestinationResolved = useRef(
-    !initialDestination.current.dipendenteId && !initialDestination.current.automezzoId
+    !searchParams.get("dipendenteId") && !searchParams.get("automezzoId")
   );
 
   const [tree, setTree] = useState<TreeNode[]>([]);
@@ -884,17 +876,13 @@ export default function DocumentiWorkspace() {
   const knownCategories = useMemo(() => collectCategoriesFromTree(tree), [tree]);
 
   useEffect(() => {
-    setNavReady(true);
-  }, []);
-
-  useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => window.clearTimeout(timer);
   }, [search]);
 
   // Keep URL in sync so "indietro" ripristina categoria/destinazione
   useEffect(() => {
-    if (!navReady || !initialDestinationResolved.current) return;
+    if (!initialDestinationResolved.current) return;
     const params = new URLSearchParams();
     if (section) params.set("section", section);
     if (category) params.set("categoria", category);
@@ -909,7 +897,6 @@ export default function DocumentiWorkspace() {
       router.replace(next ? `/documenti?${next}` : "/documenti", { scroll: false });
     }
   }, [
-    navReady,
     section,
     category,
     destination,
@@ -941,84 +928,47 @@ export default function DocumentiWorkspace() {
       (section === "AUTOMEZZO" && (destination || category))
   );
 
-  const fetchTree = useCallback(async (force = false) => {
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [prevRefreshKey, setPrevRefreshKey] = useState(refreshKey);
+  if (prevRefreshKey !== refreshKey) {
+    setPrevRefreshKey(refreshKey);
+    setTreeLoading(true);
+    setLoading(true);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    const force = refreshKey > 0;
     if (!force) {
       const cached = getCachedTree<{ tree: TreeNode[]; total: number }>();
       if (cached) {
-        setTree(cached.tree);
-        setTotal(cached.total);
-        setTreeLoading(false);
-        return;
+        queueMicrotask(() => {
+          if (cancelled) return;
+          setTree(cached.tree);
+          setTotal(cached.total);
+          setTreeLoading(false);
+        });
+        return () => {
+          cancelled = true;
+        };
       }
     }
-    setTreeLoading(true);
-    try {
-      const response = await fetch("/api/documenti/albero");
-      const body = await response.json();
-      if (response.ok) {
+    fetch("/api/documenti/albero")
+      .then(async (response) => (response.ok ? response.json() : null))
+      .then((body) => {
+        if (cancelled || !body) return;
         const next = { tree: (body.tree ?? []) as TreeNode[], total: body.total ?? 0 };
         setTree(next.tree);
         setTotal(next.total);
         setCachedTree(next);
-      }
-    } finally {
-      setTreeLoading(false);
-    }
-  }, []);
-
-  const fetchDocuments = useCallback(
-    async (force = false) => {
-      const currentRequest = ++requestId.current;
-
-      if (!hasDocumentScope) {
-        setDocuments([]);
-        setListTotal(0);
-        setLoading(false);
-        return;
-      }
-
-      const params = new URLSearchParams({ limit: "100" });
-      if (section) params.set("entityType", section);
-      if (destination?.dipendenteId) params.set("dipendenteId", destination.dipendenteId);
-      if (destination?.automezzoId) params.set("automezzoId", destination.automezzoId);
-      if (category) params.set("categoria", category);
-      if (debouncedSearch) params.set("search", debouncedSearch);
-      if (status) params.set("statoValidita", status);
-      if (expiry) params.set("scadenza", expiry);
-      const queryKey = params.toString();
-
-      if (!force) {
-        const cached = getCachedList<{ documenti: Documento[]; total: number }>(queryKey);
-        if (cached) {
-          setDocuments(cached.documenti);
-          setListTotal(cached.total);
-          setLoading(false);
-          return;
-        }
-      }
-
-      setLoading(true);
-      try {
-        const response = await fetch(`/api/documenti?${queryKey}`);
-        const body = await response.json();
-        if (currentRequest !== requestId.current) return;
-        const next = {
-          documenti: (body.documenti ?? []) as Documento[],
-          total: body.total ?? 0,
-        };
-        setDocuments(next.documenti);
-        setListTotal(next.total);
-        setCachedList(queryKey, next);
-      } finally {
-        if (currentRequest === requestId.current) setLoading(false);
-      }
-    },
-    [hasDocumentScope, section, destination, category, debouncedSearch, status, expiry]
-  );
-
-  useEffect(() => {
-    fetchTree();
-  }, [fetchTree]);
+      })
+      .finally(() => {
+        if (!cancelled) setTreeLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
 
   // Resolve the initial URL once. Later URL changes are produced by local navigation.
   useEffect(() => {
@@ -1036,8 +986,66 @@ export default function DocumentiWorkspace() {
   }, [tree, treeLoading, section]);
 
   useEffect(() => {
-    fetchDocuments();
-  }, [fetchDocuments]);
+    let cancelled = false;
+    const currentRequest = ++requestId.current;
+    const force = refreshKey > 0;
+
+    if (!hasDocumentScope) {
+      queueMicrotask(() => {
+        if (cancelled || currentRequest !== requestId.current) return;
+        setDocuments([]);
+        setListTotal(0);
+        setLoading(false);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const params = new URLSearchParams({ limit: "100" });
+    if (section) params.set("entityType", section);
+    if (destination?.dipendenteId) params.set("dipendenteId", destination.dipendenteId);
+    if (destination?.automezzoId) params.set("automezzoId", destination.automezzoId);
+    if (category) params.set("categoria", category);
+    if (debouncedSearch) params.set("search", debouncedSearch);
+    if (status) params.set("statoValidita", status);
+    if (expiry) params.set("scadenza", expiry);
+    const queryKey = params.toString();
+
+    if (!force) {
+      const cached = getCachedList<{ documenti: Documento[]; total: number }>(queryKey);
+      if (cached) {
+        queueMicrotask(() => {
+          if (cancelled || currentRequest !== requestId.current) return;
+          setDocuments(cached.documenti);
+          setListTotal(cached.total);
+          setLoading(false);
+        });
+        return () => {
+          cancelled = true;
+        };
+      }
+    }
+
+    fetch(`/api/documenti?${queryKey}`)
+      .then((response) => response.json())
+      .then((body) => {
+        if (cancelled || currentRequest !== requestId.current) return;
+        const next = {
+          documenti: (body.documenti ?? []) as Documento[],
+          total: body.total ?? 0,
+        };
+        setDocuments(next.documenti);
+        setListTotal(next.total);
+        setCachedList(queryKey, next);
+      })
+      .finally(() => {
+        if (!cancelled && currentRequest === requestId.current) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasDocumentScope, section, destination, category, debouncedSearch, status, expiry, refreshKey]);
 
   const activeRoot = tree.find((node) => node.entityType === section) ?? null;
   const navigationItems = activeRoot?.children ?? [];
@@ -1074,8 +1082,7 @@ export default function DocumentiWorkspace() {
 
   function refresh() {
     invalidateDocumentiCache();
-    fetchTree(true);
-    fetchDocuments(true);
+    setRefreshKey((k) => k + 1);
   }
 
   return (
@@ -1411,7 +1418,7 @@ export default function DocumentiWorkspace() {
         </main>
       </div>
 
-      {isAdmin && (
+      {isAdmin && uploadOpen && (
         <UploadDialog
           open={uploadOpen}
           onOpenChange={setUploadOpen}

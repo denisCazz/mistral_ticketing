@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -70,7 +70,6 @@ type FormState = {
 
 export default function NuovoRapportinoForm() {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const [clienti, setClienti] = useState<ClienteOption[]>([]);
   const [marche, setMarche] = useState<MarcaOption[]>([]);

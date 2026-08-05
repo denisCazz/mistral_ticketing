@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
@@ -69,31 +69,44 @@ export default function ArticoloDetailPage() {
     ubicazione: "",
   });
 
-  const load = useCallback(async () => {
+  const [refreshKey, setRefreshKey] = useState(0);
+  const loadKey = `${id}|${refreshKey}`;
+  const [prevLoadKey, setPrevLoadKey] = useState(loadKey);
+  if (prevLoadKey !== loadKey) {
+    setPrevLoadKey(loadKey);
     setLoading(true);
-    const res = await fetch(`/api/magazzino/${id}`);
-    if (!res.ok) {
-      setArticolo(null);
-      setLoading(false);
-      return;
-    }
-    const data = (await res.json()) as Articolo;
-    setArticolo(data);
-    setForm({
-      codice: data.codice,
-      ean: data.ean ?? "",
-      nome: data.nome,
-      descrizione: data.descrizione ?? "",
-      unitaMisura: data.unitaMisura,
-      sogliaMinima: String(data.sogliaMinima),
-      ubicazione: data.ubicazione ?? "",
-    });
-    setLoading(false);
-  }, [id]);
+  }
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
+    fetch(`/api/magazzino/${id}`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error("load");
+        return (await res.json()) as Articolo;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setArticolo(data);
+        setForm({
+          codice: data.codice,
+          ean: data.ean ?? "",
+          nome: data.nome,
+          descrizione: data.descrizione ?? "",
+          unitaMisura: data.unitaMisura,
+          sogliaMinima: String(data.sogliaMinima),
+          ubicazione: data.ubicazione ?? "",
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setArticolo(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, refreshKey]);
 
   async function saveEdit(e: React.FormEvent) {
     e.preventDefault();
@@ -119,7 +132,7 @@ export default function ArticoloDetailPage() {
     }
     toast.success("Articolo aggiornato");
     setEditOpen(false);
-    void load();
+    setRefreshKey((k) => k + 1);
   }
 
   async function doMovimento(e: React.FormEvent) {
@@ -151,7 +164,7 @@ export default function ArticoloDetailPage() {
     setMoveOpen(null);
     setQty("1");
     setNote("");
-    void load();
+    setRefreshKey((k) => k + 1);
   }
 
   if (loading) {

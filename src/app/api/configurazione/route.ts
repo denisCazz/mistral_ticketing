@@ -96,7 +96,7 @@ export async function GET() {
     orderBy: { createdAt: "desc" },
   });
 
-  let meseCorrente = {
+  const meseCorrente = {
     generazioni: 0,
     promptTokens: 0,
     completionTokens: 0,
@@ -104,7 +104,7 @@ export async function GET() {
     costoUsd: 0,
     stimeParziali: 0,
   };
-  let mesePrecedente = {
+  const mesePrecedente = {
     generazioni: 0,
     promptTokens: 0,
     completionTokens: 0,

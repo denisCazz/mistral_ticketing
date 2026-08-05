@@ -7,6 +7,18 @@ services:
       DATABASE_URL: "postgresql://mistral:mistral123@db:5432/mistral_impianti?schema=public"
       NEXTAUTH_URL: "${NEXTAUTH_URL:-http://localhost:3000}"
       NEXTAUTH_SECRET: "${NEXTAUTH_SECRET}"
+      RAPPORTINI_ENABLED: "${RAPPORTINI_ENABLED:-false}"
+      EMAIL_FROM: "${EMAIL_FROM:-Mistral Impianti <noreply@mistralimpianti.it>}"
+      RESEND_API_KEY: "${RESEND_API_KEY:-}"
+      R2_ACCOUNT_ID: "${R2_ACCOUNT_ID:-}"
+      R2_ACCESS_KEY_ID: "${R2_ACCESS_KEY_ID:-}"
+      R2_SECRET_ACCESS_KEY: "${R2_SECRET_ACCESS_KEY:-}"
+      R2_BUCKET: "${R2_BUCKET:-}"
+      R2_ENDPOINT: "${R2_ENDPOINT:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_EMBEDDING_MODEL: "${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}"
+      OPENAI_CHAT_MODEL: "${OPENAI_CHAT_MODEL:-gpt-4o-mini}"
+      CRON_SECRET: "${CRON_SECRET:-}"
     depends_on:
       db:
         condition: service_healthy

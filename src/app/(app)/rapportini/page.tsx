@@ -20,10 +20,15 @@ export default function RapportiniPage() {
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
 
+  const [prevSearch, setPrevSearch] = useState(search);
+  if (prevSearch !== search) {
+    setPrevSearch(search);
+    setLoading(true);
+  }
+
   useEffect(() => {
     const q = new URLSearchParams();
     if (search.trim()) q.set("search", search.trim());
-    setLoading(true);
     fetch(`/api/rapportini?${q}`)
       .then((r) => r.json())
       .then((json) => {

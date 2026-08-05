@@ -50,39 +50,54 @@ export default function PreventivoDetailPage() {
     Array<{ statoA: StatoPreventivo; changedAt: string; changedBy: { name: string }; note?: string }>
   >([]);
 
-  const load = useCallback(async () => {
+  const [refreshKey, setRefreshKey] = useState(0);
+  const loadKey = `${id}|${refreshKey}`;
+  const [prevLoadKey, setPrevLoadKey] = useState(loadKey);
+  if (prevLoadKey !== loadKey) {
+    setPrevLoadKey(loadKey);
     setLoading(true);
-    const res = await fetch(`/api/preventivi/${id}`);
-    if (!res.ok) {
-      toast.error("Preventivo non trovato");
-      setLoading(false);
-      return;
-    }
-    const p = await res.json();
-    setNumeroPreventivo(p.numeroPreventivo);
-    setStato(p.stato);
-    setVersione(p.versione);
-    setClienteNome(p.cliente.ragioneSociale);
-    setIntroduzione(p.introduzione ?? "");
-    setCondizioni(p.condizioni ?? "");
-    setValidoFino(p.validoFino ? p.validoFino.slice(0, 10) : "");
-    setRighe(
-      p.righe.map((r: Riga) => ({
-        id: r.id,
-        descrizione: r.descrizione,
-        quantita: Number(r.quantita),
-        prezzoUnitario: Number(r.prezzoUnitario),
-        scontoPercentuale: Number(r.scontoPercentuale),
-        aliquotaIva: Number(r.aliquotaIva),
-      }))
-    );
-    setStoria(p.storia ?? []);
-    setLoading(false);
-  }, [id]);
+  }
 
   useEffect(() => {
-    load();
-  }, [load]);
+    let cancelled = false;
+    fetch(`/api/preventivi/${id}`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error("not-found");
+        return await res.json();
+      })
+      .then((p) => {
+        if (cancelled) return;
+        setNumeroPreventivo(p.numeroPreventivo);
+        setStato(p.stato);
+        setVersione(p.versione);
+        setClienteNome(p.cliente.ragioneSociale);
+        setIntroduzione(p.introduzione ?? "");
+        setCondizioni(p.condizioni ?? "");
+        setValidoFino(p.validoFino ? p.validoFino.slice(0, 10) : "");
+        setRighe(
+          p.righe.map((r: Riga) => ({
+            id: r.id,
+            descrizione: r.descrizione,
+            quantita: Number(r.quantita),
+            prezzoUnitario: Number(r.prezzoUnitario),
+            scontoPercentuale: Number(r.scontoPercentuale),
+            aliquotaIva: Number(r.aliquotaIva),
+          }))
+        );
+        setStoria(p.storia ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) toast.error("Preventivo non trovato");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, refreshKey]);
+
+  const load = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   const statiDisponibili = statiPreventivoTarget(session?.user?.role, stato);
 

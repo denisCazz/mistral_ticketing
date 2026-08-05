@@ -50,8 +50,8 @@ interface ScadenzaRow {
 type Tab = "da-classificare" | "prossime" | "con-scadenza" | "non-serve";
 
 const tabs: { value: Tab; label: string }[] = [
-  { value: "da-classificare", label: "Da classificare" },
   { value: "prossime", label: "Prossime" },
+  { value: "da-classificare", label: "Da classificare" },
   { value: "con-scadenza", label: "Con scadenza" },
   { value: "non-serve", label: "Non serve" },
 ];
@@ -100,7 +100,7 @@ function entityLabel(doc: DocumentoRow) {
 }
 
 export default function ScadenzePage() {
-  const [tab, setTab] = useState<Tab>("da-classificare");
+  const [tab, setTab] = useState<Tab>("prossime");
   const [documenti, setDocumenti] = useState<DocumentoRow[]>([]);
   const [scadenze, setScadenze] = useState<ScadenzaRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -116,84 +116,119 @@ export default function ScadenzePage() {
     daClassificare: 0,
     conScadenza: 0,
     nonServe: 0,
+    urgenti: 0,
   });
 
-  const caricaConteggi = useCallback(async () => {
-    const [a, b, c] = await Promise.all([
+  // Reset quando cambia tab/ricerca: pattern React "adjust state during render"
+  const tabSearchKey = `${tab}|${search}`;
+  const [prevTabSearchKey, setPrevTabSearchKey] = useState(tabSearchKey);
+  if (prevTabSearchKey !== tabSearchKey) {
+    setPrevTabSearchKey(tabSearchKey);
+    setPage(1);
+    setDateDrafts({});
+  }
+
+  const [refreshKey, setRefreshKey] = useState(0);
+  const loadKey = `${tab}|${page}|${search}|${refreshKey}`;
+  const [prevLoadKey, setPrevLoadKey] = useState(loadKey);
+  if (prevLoadKey !== loadKey) {
+    setPrevLoadKey(loadKey);
+    setLoading(true);
+    setErrore(false);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    Promise.all([
       fetch("/api/documenti?scadenza=da-classificare&limit=1").then((r) => r.json()),
       fetch("/api/documenti?scadenza=presenti&limit=1").then((r) => r.json()),
       fetch("/api/documenti?scadenza=non-serve&limit=1").then((r) => r.json()),
-    ]);
-    setCounts({
-      daClassificare: a.total ?? 0,
-      conScadenza: b.total ?? 0,
-      nonServe: c.total ?? 0,
-    });
-  }, []);
-
-  const carica = useCallback(async () => {
-    setLoading(true);
-    setErrore(false);
-    try {
-      if (tab === "prossime") {
-        const response = await fetch("/api/scadenze?giorni=90&confermate=false");
-        if (!response.ok) throw new Error("load");
-        const data = await response.json();
-        setScadenze(data.scadenze ?? []);
-        setDocumenti([]);
-        setTotal((data.scadenze ?? []).length);
-        setTotalPages(1);
-      } else {
-        const scadenzaParam =
-          tab === "da-classificare"
-            ? "da-classificare"
-            : tab === "con-scadenza"
-              ? "presenti"
-              : "non-serve";
-        const params = new URLSearchParams({
-          scadenza: scadenzaParam,
-          page: String(page),
-          limit: "40",
-          suggest: "1",
+      fetch("/api/scadenze?giorni=7&confermate=false").then((r) => r.json()),
+    ])
+      .then(([a, b, c, d]) => {
+        if (cancelled) return;
+        setCounts({
+          daClassificare: a.total ?? 0,
+          conScadenza: b.total ?? 0,
+          nonServe: c.total ?? 0,
+          urgenti: (d.scadenze ?? []).length,
         });
-        if (search) params.set("search", search);
-        const response = await fetch(`/api/documenti?${params}`);
-        if (!response.ok) throw new Error("load");
-        const data = await response.json();
-        const rows: DocumentoRow[] = data.documenti ?? [];
-        setDocumenti(rows);
-        setTotal(data.total ?? 0);
-        setTotalPages(data.totalPages ?? 1);
-        setScadenze([]);
-        setDateDrafts((prev) => {
-          const next = { ...prev };
-          for (const doc of rows) {
-            if (next[doc.id] === undefined) {
-              next[doc.id] =
-                doc.dataScadenza?.slice(0, 10) ||
-                doc.suggestedScadenza ||
-                "";
+      })
+      .catch(() => {});
+
+    const finish = () => {
+      if (!cancelled) setLoading(false);
+    };
+
+    if (tab === "prossime") {
+      fetch("/api/scadenze?giorni=90&confermate=false")
+        .then((response) => {
+          if (!response.ok) throw new Error("load");
+          return response.json();
+        })
+        .then((data) => {
+          if (cancelled) return;
+          setScadenze(data.scadenze ?? []);
+          setDocumenti([]);
+          setTotal((data.scadenze ?? []).length);
+          setTotalPages(1);
+        })
+        .catch(() => {
+          if (!cancelled) setErrore(true);
+        })
+        .finally(finish);
+    } else {
+      const scadenzaParam =
+        tab === "da-classificare"
+          ? "da-classificare"
+          : tab === "con-scadenza"
+            ? "presenti"
+            : "non-serve";
+      const params = new URLSearchParams({
+        scadenza: scadenzaParam,
+        page: String(page),
+        limit: "40",
+        suggest: "1",
+      });
+      if (search) params.set("search", search);
+      fetch(`/api/documenti?${params}`)
+        .then((response) => {
+          if (!response.ok) throw new Error("load");
+          return response.json();
+        })
+        .then((data) => {
+          if (cancelled) return;
+          const rows: DocumentoRow[] = data.documenti ?? [];
+          setDocumenti(rows);
+          setTotal(data.total ?? 0);
+          setTotalPages(data.totalPages ?? 1);
+          setScadenze([]);
+          setDateDrafts((prev) => {
+            const next = { ...prev };
+            for (const doc of rows) {
+              if (next[doc.id] === undefined) {
+                next[doc.id] =
+                  doc.dataScadenza?.slice(0, 10) ||
+                  doc.suggestedScadenza ||
+                  "";
+              }
             }
-          }
-          return next;
-        });
-      }
-      await caricaConteggi();
-    } catch {
-      setErrore(true);
-    } finally {
-      setLoading(false);
+            return next;
+          });
+        })
+        .catch(() => {
+          if (!cancelled) setErrore(true);
+        })
+        .finally(finish);
     }
-  }, [tab, page, search, caricaConteggi]);
 
-  useEffect(() => {
-    void carica();
-  }, [carica]);
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, page, search, refreshKey]);
 
-  useEffect(() => {
-    setPage(1);
-    setDateDrafts({});
-  }, [tab, search]);
+  const ricarica = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   async function salvaScadenza(
     doc: DocumentoRow,
@@ -227,7 +262,7 @@ export default function ScadenzePage() {
         delete next[doc.id];
         return next;
       });
-      await carica();
+      ricarica();
     } catch {
       toast.error("Salvataggio non riuscito");
     } finally {
@@ -250,7 +285,7 @@ export default function ScadenzePage() {
         delete next[doc.id];
         return next;
       });
-      await carica();
+      ricarica();
     } catch {
       toast.error("Operazione non riuscita");
     } finally {
@@ -271,7 +306,7 @@ export default function ScadenzePage() {
       });
       if (!res.ok) throw new Error("save");
       toast.success("Documento da riclassificare");
-      await carica();
+      ricarica();
     } catch {
       toast.error("Operazione non riuscita");
     } finally {
@@ -343,7 +378,24 @@ export default function ScadenzePage() {
           </div>
         </section>
 
-        <section className="grid gap-3 sm:grid-cols-3">
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <button
+            type="button"
+            onClick={() => setTab("prossime")}
+            className="rounded-2xl border border-red-100 bg-white p-5 text-left shadow-sm shadow-slate-200/60 transition hover:border-red-200 hover:shadow-md"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-50 text-red-600">
+                <AlertCircle className="h-5 w-5" />
+              </div>
+            </div>
+            <p className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">
+              {counts.urgenti}
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              Urgenti · entro 7 giorni
+            </p>
+          </button>
           <div className="rounded-2xl border border-amber-100 bg-white p-5 shadow-sm shadow-slate-200/60">
             <div className="flex items-center justify-between">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
@@ -436,7 +488,7 @@ export default function ScadenzePage() {
               <h3 className="mt-4 font-semibold text-slate-950">
                 Caricamento non riuscito
               </h3>
-              <Button className="mt-5" variant="outline" onClick={() => void carica()}>
+              <Button className="mt-5" variant="outline" onClick={ricarica}>
                 <RefreshCw data-icon="inline-start" />
                 Riprova
               </Button>

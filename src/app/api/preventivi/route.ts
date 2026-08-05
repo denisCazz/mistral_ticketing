@@ -7,10 +7,6 @@ import {
 import { prisma } from "@/lib/db";
 import { Prisma, StatoPreventivo } from "@prisma/client";
 import { calcolaTotaliPreventivo } from "@/lib/preventivo-calcoli";
-import {
-  preventivoIncludeForNotify,
-  notifyPreventivoStatoChange,
-} from "@/lib/preventivo-notifications";
 
 export async function GET(req: Request) {
   const session = await auth();

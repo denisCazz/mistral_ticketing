@@ -87,9 +87,14 @@ function DocumentoDetailContent() {
     }
   }, [searchParams]);
 
+  const [prevId, setPrevId] = useState(id);
+  if (prevId !== id) {
+    setPrevId(id);
+    setLoading(true);
+  }
+
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     fetch(`/api/documenti/${id}`)
       .then((r) => r.json())
       .then((d) => {

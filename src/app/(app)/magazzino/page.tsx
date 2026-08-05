@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -88,22 +88,31 @@ function MagazzinoContent() {
   const lowStock = searchParams.get("lowStock") === "1";
   const page = parseInt(searchParams.get("page") ?? "1") || 1;
 
-  const fetchArticoli = useCallback(async () => {
+  const queryKey = `${search}|${lowStock}|${page}`;
+  const [prevQueryKey, setPrevQueryKey] = useState(queryKey);
+  if (prevQueryKey !== queryKey) {
+    setPrevQueryKey(queryKey);
     setLoading(true);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (lowStock) params.set("lowStock", "true");
     params.set("page", String(page));
-    const res = await fetch(`/api/magazzino?${params}`);
-    const data = await res.json();
-    setArticoli(data.articoli ?? []);
-    setTotal(data.total ?? 0);
-    setLoading(false);
+    fetch(`/api/magazzino?${params}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        setArticoli(data.articoli ?? []);
+        setTotal(data.total ?? 0);
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [search, lowStock, page]);
-
-  useEffect(() => {
-    void fetchArticoli();
-  }, [fetchArticoli]);
 
   function doSearch() {
     const p = new URLSearchParams();

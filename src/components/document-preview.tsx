@@ -72,19 +72,23 @@ export function DocumentPreview({
   const showFileTab = kind === "pdf" || kind === "image" || kind === "text-file";
   const showTextTab = hasExtracted || kind === "text-file";
 
-  useEffect(() => {
+  // Reset dello stato quando cambia documento: pattern React "adjust state during render"
+  // (https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
+  const docKey = `${documentoId}:${kind}`;
+  const [prevDocKey, setPrevDocKey] = useState(docKey);
+  if (prevDocKey !== docKey) {
+    setPrevDocKey(docKey);
     setTab(showFileTab ? "file" : "testo");
     setZoom(1);
     setRotation(0);
     setError(null);
     setLoading(kind === "pdf" || kind === "image" || kind === "text-file");
     setTextContent(null);
-  }, [documentoId, kind, showFileTab]);
+  }
 
   useEffect(() => {
     if (kind !== "text-file" || tab !== "file") return;
     let cancelled = false;
-    setLoading(true);
     fetch(fileUrl)
       .then(async (res) => {
         if (!res.ok) throw new Error("Lettura file fallita");

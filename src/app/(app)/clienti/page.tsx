@@ -1,19 +1,11 @@
 "use client";
 
-import { useEffect, useState, useCallback, Suspense } from "react";
-import Link from "next/link";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Search, Phone, MapPin, Pencil, Plus } from "lucide-react";
+import { ClienteFormDialog } from "@/components/clienti/cliente-form-dialog";
 
 interface Cliente {
   id: string;
@@ -26,41 +18,6 @@ interface Cliente {
   indirizzo: string | null;
   cap: string | null;
   _count: { preventivi: number };
-}
-
-interface ClienteForm {
-  ragioneSociale: string;
-  cellulare: string;
-  telFisso: string;
-  email: string;
-  citta: string;
-  provincia: string;
-  indirizzo: string;
-  cap: string;
-}
-
-const EMPTY: ClienteForm = {
-  ragioneSociale: "",
-  cellulare: "",
-  telFisso: "",
-  email: "",
-  citta: "",
-  provincia: "",
-  indirizzo: "",
-  cap: "",
-};
-
-function clienteToForm(c: Cliente): ClienteForm {
-  return {
-    ragioneSociale: c.ragioneSociale,
-    cellulare: c.cellulare ?? "",
-    telFisso: c.telFisso ?? "",
-    email: c.email ?? "",
-    citta: c.citta ?? "",
-    provincia: c.provincia ?? "",
-    indirizzo: c.indirizzo ?? "",
-    cap: c.cap ?? "",
-  };
 }
 
 export default function ClientiPage() {
@@ -81,26 +38,36 @@ function ClientiContent() {
   const [searchInput, setSearchInput] = useState(searchParams.get("search") ?? "");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Cliente | null>(null);
-  const [form, setForm] = useState<ClienteForm>(EMPTY);
-  const [saving, setSaving] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const search = searchParams.get("search") ?? "";
   const page = parseInt(searchParams.get("page") ?? "1");
 
-  const fetchClienti = useCallback(async () => {
+  const queryKey = `${search}|${page}|${refreshKey}`;
+  const [prevQueryKey, setPrevQueryKey] = useState(queryKey);
+  if (prevQueryKey !== queryKey) {
+    setPrevQueryKey(queryKey);
     setLoading(true);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     params.set("page", String(page));
-    const res = await fetch(`/api/clienti?${params}`);
-    const data = await res.json();
-    setClienti(data.clienti ?? []);
-    setTotal(data.total ?? 0);
-    setTotalPages(data.totalPages ?? 1);
-    setLoading(false);
-  }, [search, page]);
-
-  useEffect(() => { fetchClienti(); }, [fetchClienti]);
+    fetch(`/api/clienti?${params}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        setClienti(data.clienti ?? []);
+        setTotal(data.total ?? 0);
+        setTotalPages(data.totalPages ?? 1);
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [search, page, refreshKey]);
 
   function doSearch() {
     const p = new URLSearchParams();
@@ -110,40 +77,13 @@ function ClientiContent() {
 
   function openCreate() {
     setEditing(null);
-    setForm(EMPTY);
     setDialogOpen(true);
   }
 
   function openEdit(c: Cliente, e: React.MouseEvent) {
     e.stopPropagation();
     setEditing(c);
-    setForm(clienteToForm(c));
     setDialogOpen(true);
-  }
-
-  async function saveCliente(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    const res = editing
-      ? await fetch(`/api/clienti/${editing.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(form),
-        })
-      : await fetch("/api/clienti", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(form),
-        });
-    setSaving(false);
-    if (!res.ok) {
-      toast.error(editing ? "Errore aggiornamento cliente" : "Errore creazione cliente");
-      return;
-    }
-    toast.success(editing ? "Cliente aggiornato" : "Cliente creato");
-    setDialogOpen(false);
-    setEditing(null);
-    fetchClienti();
   }
 
   return (
@@ -256,57 +196,15 @@ function ClientiContent() {
         </div>
       )}
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editing ? "Modifica cliente" : "Nuovo cliente"}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={saveCliente} className="space-y-3 mt-2">
-            <div className="space-y-1">
-              <Label>Ragione sociale *</Label>
-              <Input required value={form.ragioneSociale} onChange={(e) => setForm((f) => ({ ...f, ragioneSociale: e.target.value }))} />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label>Cellulare</Label>
-                <Input value={form.cellulare} onChange={(e) => setForm((f) => ({ ...f, cellulare: e.target.value }))} />
-              </div>
-              <div className="space-y-1">
-                <Label>Tel. fisso</Label>
-                <Input value={form.telFisso} onChange={(e) => setForm((f) => ({ ...f, telFisso: e.target.value }))} />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <Label>Email</Label>
-              <Input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
-            </div>
-            <div className="space-y-1">
-              <Label>Indirizzo</Label>
-              <Input value={form.indirizzo} onChange={(e) => setForm((f) => ({ ...f, indirizzo: e.target.value }))} />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <Label>CAP</Label>
-                <Input value={form.cap} onChange={(e) => setForm((f) => ({ ...f, cap: e.target.value }))} />
-              </div>
-              <div className="space-y-1 col-span-2">
-                <Label>Città</Label>
-                <Input value={form.citta} onChange={(e) => setForm((f) => ({ ...f, citta: e.target.value }))} />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <Label>Provincia</Label>
-              <Input value={form.provincia} onChange={(e) => setForm((f) => ({ ...f, provincia: e.target.value }))} />
-            </div>
-            <div className="flex gap-3 justify-end pt-2">
-              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Annulla</Button>
-              <Button type="submit" className="bg-orange-500 hover:bg-orange-600" disabled={saving}>
-                {saving ? "Salvataggio..." : editing ? "Salva modifiche" : "Crea cliente"}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <ClienteFormDialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) setEditing(null);
+        }}
+        cliente={editing}
+        onSaved={() => setRefreshKey((k) => k + 1)}
+      />
     </div>
   );
 }

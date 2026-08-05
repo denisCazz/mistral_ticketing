@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,15 +34,21 @@ export default function DuplicatiPage() {
   const [gruppi, setGruppi] = useState<Gruppo[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  const fetchDuplicati = useCallback(async () => {
-    setLoading(true);
-    const res = await fetch("/api/import/duplicati");
-    if (res.ok) setGruppi(await res.json());
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { fetchDuplicati(); }, [fetchDuplicati]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/import/duplicati")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => {
+        if (cancelled) return;
+        setGruppi(data);
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
 
   async function scegli(recordId: string) {
     setLoadingId(recordId);
@@ -50,7 +56,7 @@ export default function DuplicatiPage() {
     setLoadingId(null);
     if (!res.ok) { toast.error("Errore durante la scelta"); return; }
     toast.success("Cliente importato correttamente");
-    fetchDuplicati();
+    setRefreshKey((k) => k + 1);
   }
 
   const totale = gruppi.length;

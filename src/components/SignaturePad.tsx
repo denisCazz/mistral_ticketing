@@ -28,6 +28,7 @@ export default function SignaturePad({
   const [isOpen, setIsOpen] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasStrokes, setHasStrokes] = useState(false);
+  const [historyLen, setHistoryLen] = useState(0);
 
   const initCanvas = useCallback((img?: string) => {
     const canvas = canvasRef.current;
@@ -68,15 +69,20 @@ export default function SignaturePad({
   useEffect(() => {
     if (!isOpen) return;
     document.body.style.overflow = 'hidden';
-    draftRef.current = value || '';
-    historyRef.current = [];
-    setHasStrokes(!!value);
     const raf = requestAnimationFrame(() => initCanvas());
     return () => {
       cancelAnimationFrame(raf);
       document.body.style.overflow = '';
     };
-  }, [isOpen, value, initCanvas]);
+  }, [isOpen, initCanvas]);
+
+  const openPad = () => {
+    draftRef.current = value || '';
+    historyRef.current = [];
+    setHistoryLen(0);
+    setHasStrokes(!!value);
+    setIsOpen(true);
+  };
 
   // Resize handler
   useEffect(() => {
@@ -114,6 +120,7 @@ export default function SignaturePad({
     if (canvas.width > 0 && canvas.height > 0) {
       try {
         historyRef.current = [...historyRef.current.slice(-19), canvas.toDataURL('image/png')];
+        setHistoryLen(historyRef.current.length);
       } catch { /* noop */ }
     }
 
@@ -167,6 +174,7 @@ export default function SignaturePad({
   const undo = () => {
     if (historyRef.current.length === 0) return;
     const prev = historyRef.current.pop()!;
+    setHistoryLen(historyRef.current.length);
     draftRef.current = prev;
     initCanvas(prev);
     if (historyRef.current.length === 0 && !value) setHasStrokes(false);
@@ -180,6 +188,7 @@ export default function SignaturePad({
     }
     draftRef.current = '';
     historyRef.current = [];
+    setHistoryLen(0);
     setHasStrokes(false);
   };
 
@@ -193,6 +202,7 @@ export default function SignaturePad({
   const cancel = () => {
     draftRef.current = '';
     historyRef.current = [];
+    setHistoryLen(0);
     setIsOpen(false);
   };
 
@@ -200,6 +210,7 @@ export default function SignaturePad({
     onChange('');
     draftRef.current = '';
     historyRef.current = [];
+    setHistoryLen(0);
   };
 
   return (
@@ -210,7 +221,7 @@ export default function SignaturePad({
 
       {/* --- Inline: tap to sign area --- */}
       <div
-        onClick={() => setIsOpen(true)}
+        onClick={openPad}
         className="rounded-2xl border-2 border-dashed border-surface-300 dark:border-surface-600 bg-white/60 dark:bg-surface-800/60 cursor-pointer hover:border-primary-400 dark:hover:border-primary-500 transition-colors overflow-hidden"
       >
         {value ? (
@@ -231,7 +242,7 @@ export default function SignaturePad({
         <div className="mt-1.5 flex justify-end gap-1">
           <button
             type="button"
-            onClick={() => setIsOpen(true)}
+            onClick={openPad}
             className="min-h-11 px-3 text-xs text-primary-500 hover:text-primary-600 font-medium"
           >
             Modifica
@@ -267,7 +278,7 @@ export default function SignaturePad({
             <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-3 border-b border-surface-200 dark:border-surface-700">
               <span className="text-sm font-bold text-surface-800 dark:text-surface-100 truncate">{label}</span>
               <div className="flex items-center gap-1.5 shrink-0">
-                <button type="button" onClick={undo} disabled={historyRef.current.length === 0} className="min-h-9 px-3 text-xs rounded-lg border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-300 disabled:opacity-30 transition-colors flex items-center gap-1">
+                <button type="button" onClick={undo} disabled={historyLen === 0} className="min-h-9 px-3 text-xs rounded-lg border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-300 disabled:opacity-30 transition-colors flex items-center gap-1">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" /></svg>
                   Annulla
                 </button>
