@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { preventivoWhereForSession } from "@/lib/access";
-import { RAPPORTINI_ENABLED } from "@/lib/config";
 import { prisma } from "@/lib/db";
 import { giorniFinoScadenza } from "@/lib/scadenza-parser";
 import { toNum } from "@/lib/magazzino";
@@ -13,7 +12,6 @@ export async function GET() {
 
   try {
     const preventivoWhere = preventivoWhereForSession(session);
-    const isAdmin = session.user?.role === "ADMIN";
     const isOperatore = session.user?.role === "OPERATORE";
     const userId = session.user!.id!;
 
@@ -49,9 +47,6 @@ export async function GET() {
       scadenzaBase.responsabileId = userId;
     }
 
-    const rapportinoWhere: Record<string, unknown> = {};
-    if (!isAdmin) rapportinoWhere.utenteId = userId;
-
     const [
       scadenzeProssime,
       scadenzeUrgenti,
@@ -64,8 +59,6 @@ export async function GET() {
       documentiDaClassificare,
       magazzinoSottoSoglia,
       magazzinoAlert,
-      rapportiniRecenti,
-      rapportiniMese,
     ] = await Promise.all([
       prisma.scadenza.count({
         where: {
@@ -150,27 +143,6 @@ export async function GET() {
         ORDER BY quantita ASC, nome ASC
         LIMIT 5
       `,
-      RAPPORTINI_ENABLED
-        ? prisma.rapportino.findMany({
-            where: rapportinoWhere,
-            take: 5,
-            orderBy: { dataIntervento: "desc" },
-            include: {
-              cliente: { select: { id: true, ragioneSociale: true } },
-              utente: { select: { id: true, name: true } },
-            },
-          })
-        : Promise.resolve([]),
-      RAPPORTINI_ENABLED
-        ? prisma.rapportino.count({
-            where: {
-              ...rapportinoWhere,
-              dataIntervento: {
-                gte: new Date(now.getFullYear(), now.getMonth(), 1),
-              },
-            },
-          })
-        : Promise.resolve(0),
     ]);
 
     return NextResponse.json({
@@ -203,31 +175,6 @@ export async function GET() {
         sogliaMinima: toNum(a.sogliaMinima),
         unitaMisura: a.unitaMisura,
       })),
-      rapportiniEnabled: RAPPORTINI_ENABLED,
-      rapportiniRecenti: RAPPORTINI_ENABLED
-        ? (
-            rapportiniRecenti as Array<{
-              id: string;
-              dataIntervento: Date;
-              settore: string;
-              tipoImpianto: string;
-              marca: string;
-              modello: string;
-              cliente: { id: string; ragioneSociale: string };
-              utente: { id: string; name: string };
-            }>
-          ).map((r) => ({
-            id: r.id,
-            dataIntervento: r.dataIntervento.toISOString().slice(0, 10),
-            settore: r.settore,
-            tipoImpianto: r.tipoImpianto,
-            marca: r.marca,
-            modello: r.modello,
-            cliente: r.cliente,
-            utente: r.utente,
-          }))
-        : [],
-      rapportiniMese: RAPPORTINI_ENABLED ? rapportiniMese : 0,
     });
   } catch (error) {
     console.error("[dashboard]", error);

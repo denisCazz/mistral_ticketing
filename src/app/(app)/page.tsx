@@ -10,7 +10,6 @@ import {
   AlertTriangle,
   ArrowRight,
   CalendarClock,
-  ClipboardList,
   FilePlus2,
   FileText,
   FolderOpen,
@@ -72,18 +71,6 @@ interface DashboardData {
     sogliaMinima: number;
     unitaMisura: string;
   }[];
-  rapportiniEnabled: boolean;
-  rapportiniRecenti: {
-    id: string;
-    dataIntervento: string;
-    settore: string;
-    tipoImpianto: string;
-    marca: string;
-    modello: string;
-    cliente: { id: string; ragioneSociale: string };
-    utente: { id: string; name: string };
-  }[];
-  rapportiniMese: number;
 }
 
 function formatoData(iso: string) {
@@ -276,15 +263,6 @@ export default function DashboardPage() {
               <Plus className="size-4" />
               Nuovo preventivo
             </Link>
-            {data.rapportiniEnabled && (
-              <Link
-                href="/rapportini/nuovo"
-                className={cn(buttonVariants({ variant: "outline" }))}
-              >
-                <ClipboardList className="size-4" />
-                Rapportino
-              </Link>
-            )}
             <Button
               variant="ghost"
               size="icon"
@@ -370,22 +348,6 @@ export default function DashboardPage() {
               </span>
             </Link>
           )}
-          {data.rapportiniEnabled && (
-            <Link
-              href="/rapportini"
-              className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition hover:border-sky-300"
-            >
-              <span className="rounded-xl bg-emerald-50 p-2 text-emerald-600">
-                <ClipboardList className="size-4" />
-              </span>
-              <span>
-                <span className="block font-medium text-slate-950">
-                  {data.rapportiniMese} rapportini questo mese
-                </span>
-                <span className="text-xs text-slate-500">Interventi registrati</span>
-              </span>
-            </Link>
-          )}
           <Link
             href="/preventivi?stato=BOZZA"
             className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition hover:border-sky-300"
@@ -414,15 +376,6 @@ export default function DashboardPage() {
                 label: "Nuovo preventivo",
                 icon: Plus,
               },
-              ...(data.rapportiniEnabled
-                ? [
-                    {
-                      href: "/rapportini/nuovo",
-                      label: "Nuovo rapportino",
-                      icon: ClipboardList,
-                    },
-                  ]
-                : []),
               {
                 href: "/magazzino/scansione",
                 label: "Scansione magazzino",
@@ -668,54 +621,6 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         </div>
-
-        {data.rapportiniEnabled && (
-          <Card>
-            <CardHeader className="flex-row items-start justify-between gap-3">
-              <div>
-                <CardTitle>Ultimi rapportini</CardTitle>
-                <CardDescription>
-                  {data.rapportiniMese} questo mese
-                </CardDescription>
-              </div>
-              <Link
-                href="/rapportini"
-                className="text-xs font-medium text-sky-700 hover:underline"
-              >
-                Tutti
-              </Link>
-            </CardHeader>
-            <CardContent>
-              {data.rapportiniRecenti.length === 0 ? (
-                <p className="py-8 text-center text-sm text-slate-500">
-                  Nessun rapportino
-                </p>
-              ) : (
-                <div className="grid gap-0 divide-y divide-slate-100 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
-                  {data.rapportiniRecenti.map((r) => (
-                    <Link
-                      key={r.id}
-                      href={`/rapportini/${r.id}`}
-                      className="flex items-center justify-between gap-3 px-2 py-3 transition hover:bg-slate-50/80 sm:px-4"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-slate-950">
-                          {r.cliente.ragioneSociale}
-                        </p>
-                        <p className="truncate text-xs text-slate-500">
-                          {r.settore} · {r.marca} {r.modello}
-                        </p>
-                      </div>
-                      <span className="shrink-0 text-xs text-slate-500">
-                        {formatoData(r.dataIntervento)}
-                      </span>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
       </div>
     </div>
   );
