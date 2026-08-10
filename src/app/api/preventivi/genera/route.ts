@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import {
@@ -9,6 +9,7 @@ import {
 } from "@/lib/openai";
 import { searchSimilarChunks } from "@/lib/rag";
 import { OPENAI_CHAT_MODEL } from "@/lib/config";
+import { canAccessDocumentiHr, documentiHrWhere } from "@/lib/access";
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -59,7 +60,12 @@ export async function POST(req: Request) {
     );
   }
 
-  const chunks = await searchSimilarChunks(queryEmbedding, 6);
+  const chunks = await searchSimilarChunks(
+    queryEmbedding,
+    6,
+    prompt,
+    documentiHrWhere(canAccessDocumentiHr(session))
+  );
 
   let draft;
   try {

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -325,7 +325,7 @@ export default function DipendentiPage() {
           </h1>
           <p className="text-sm text-gray-500 mt-1">
             Feriali precompilati in sede · tariffe personalizzabili · utenza
-            nome.cognome / Mistral1234
+            nome.cognome con password monouso al primo accesso
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

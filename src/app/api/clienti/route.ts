@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { listClienti } from "@/lib/clienti-queries";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
 
@@ -17,39 +18,15 @@ const createSchema = z.object({
 export async function GET(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const { searchParams } = new URL(req.url);
-  const search = searchParams.get("search") ?? "";
-  const page = parseInt(searchParams.get("page") ?? "1");
-  const limitParam = parseInt(searchParams.get("limit") ?? "20");
-  const limit = Number.isFinite(limitParam)
-    ? Math.min(Math.max(limitParam, 1), 200)
-    : 20;
-  const skip = (page - 1) * limit;
+  const result = await listClienti({
+    search: searchParams.get("search") ?? "",
+    page: parseInt(searchParams.get("page") ?? "1", 10) || 1,
+    limit: parseInt(searchParams.get("limit") ?? "20", 10) || 20,
+  });
 
-  const where = search
-    ? {
-        OR: [
-          { ragioneSociale: { contains: search, mode: "insensitive" as const } },
-          { cellulare: { contains: search, mode: "insensitive" as const } },
-          { telFisso: { contains: search, mode: "insensitive" as const } },
-          { email: { contains: search, mode: "insensitive" as const } },
-          { citta: { contains: search, mode: "insensitive" as const } },
-        ],
-      }
-    : {};
-
-  const [clienti, total] = await Promise.all([
-    prisma.cliente.findMany({
-      where,
-      skip,
-      take: limit,
-      orderBy: { ragioneSociale: "asc" },
-      include: { _count: { select: { preventivi: true } } },
-    }),
-    prisma.cliente.count({ where }),
-  ]);
-
-  return NextResponse.json({ clienti, total, page, totalPages: Math.ceil(total / limit) });
+  return NextResponse.json(result);
 }
 
 export async function POST(req: Request) {

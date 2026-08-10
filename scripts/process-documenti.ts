@@ -1,17 +1,15 @@
-import "dotenv/config";
+﻿import "dotenv/config";
 
 import path from "node:path";
 import { access, readFile } from "node:fs/promises";
 import { prisma } from "../src/lib/db";
-import {
-  extractTextFromBuffer,
-  normalizeExtractedText,
-} from "../src/lib/document-ingest";
+import { extractTextWithOcrFallback } from "../src/lib/document-ingest";
 import { downloadFromR2, isR2Configured } from "../src/lib/r2";
 import { indexDocumentoChunks } from "../src/lib/rag";
 import { isOpenAiConfigured } from "../src/lib/openai";
+import { structureDocumento } from "../src/lib/document-structure";
 
-type Mode = "extract" | "embed" | "all";
+type Mode = "extract" | "embed" | "structure" | "all";
 
 const args = new Map(
   process.argv.slice(2).map((arg) => {
@@ -24,6 +22,8 @@ const mode = (args.get("mode") ?? "all") as Mode;
 const limit = Math.max(1, Number(args.get("limit") ?? "10000"));
 const force = args.get("force") === "true";
 const dryRun = args.get("dry-run") === "true";
+const enableOcr = args.get("ocr") !== "false";
+const enableStructure = args.get("structure") !== "false";
 const sourceRoot = path.resolve(
   process.env.DOCUMENTI_SOURCE_PATH ??
     path.join(
@@ -33,13 +33,18 @@ const sourceRoot = path.resolve(
     )
 );
 
-if (!["extract", "embed", "all"].includes(mode)) {
-  throw new Error("Usa --mode=extract, --mode=embed oppure --mode=all");
+if (!["extract", "embed", "structure", "all"].includes(mode)) {
+  throw new Error(
+    "Usa --mode=extract|embed|structure|all"
+  );
 }
 
 interface Report {
   found: number;
   extracted: number;
+  ocr: number;
+  structured: number;
+  structureReview: number;
   embedded: number;
   skipped: number;
   review: number;
@@ -52,6 +57,9 @@ interface Report {
 const report: Report = {
   found: 0,
   extracted: 0,
+  ocr: 0,
+  structured: 0,
+  structureReview: 0,
   embedded: 0,
   skipped: 0,
   review: 0,
@@ -77,7 +85,8 @@ async function loadDocumentBuffer(documento: {
   if (documento.sourcePath) {
     const candidate = path.resolve(sourceRoot, documento.sourcePath);
     const isInsideSource =
-      candidate === sourceRoot || candidate.startsWith(`${sourceRoot}${path.sep}`);
+      candidate === sourceRoot ||
+      candidate.startsWith(`${sourceRoot}${path.sep}`);
     if (isInsideSource && (await fileExists(candidate))) {
       return readFile(candidate);
     }
@@ -103,7 +112,8 @@ async function withTimeout<T>(
       promise,
       new Promise<T>((_, reject) => {
         timer = setTimeout(
-          () => reject(new Error(`Timeout ${label} dopo ${timeoutMs / 1000}s`)),
+          () =>
+            reject(new Error(`Timeout ${label} dopo ${timeoutMs / 1000}s`)),
           timeoutMs
         );
       }),
@@ -147,12 +157,19 @@ async function extractDocument(documento: {
   }
 
   const buffer = await loadDocumentBuffer(documento);
-  const text = await withTimeout(
-    extractTextFromBuffer(buffer, documento.mimeType),
-    60_000,
+  const extracted = await withTimeout(
+    extractTextWithOcrFallback({
+      buffer,
+      mimeType: documento.mimeType,
+      filename: documento.titoloOriginale,
+      enableOcr,
+    }),
+    180_000,
     documento.titoloOriginale
   );
-  const normalized = text ? normalizeExtractedText(text) : null;
+  const normalized = extracted.text;
+
+  if (extracted.source === "ocr") report.ocr++;
 
   if (!normalized) {
     report.review++;
@@ -169,8 +186,6 @@ async function extractDocument(documento: {
   }
 
   if (!dryRun) {
-    // Evita $transaction batch: con adapter pg + latenza VPS scade il default 5s
-    // anche passando timeout. Operazioni sequenziali + retry sono più stabili.
     await retry(async () => {
       await prisma.documento.update({
         where: { id: documento.id },
@@ -193,6 +208,40 @@ async function extractDocument(documento: {
 
   report.extracted++;
   return normalized;
+}
+
+async function structureDocument(documento: {
+  id: string;
+  extractedText: string | null;
+  extractionJson: unknown;
+}): Promise<void> {
+  if (!enableStructure) {
+    report.skipped++;
+    return;
+  }
+  if (!documento.extractedText) {
+    report.skipped++;
+    return;
+  }
+  if (documento.extractionJson && !force) {
+    report.skipped++;
+    return;
+  }
+  if (dryRun) {
+    report.structured++;
+    return;
+  }
+
+  const result = await structureDocumento(documento.id, { force });
+  if (!result.ok) {
+    throw new Error(result.reason ?? "structure failed");
+  }
+  if (result.skipped) {
+    report.skipped++;
+    return;
+  }
+  report.structured++;
+  if (result.needsReview) report.structureReview++;
 }
 
 async function embedDocument(documento: {
@@ -226,7 +275,11 @@ async function embedDocument(documento: {
 }
 
 async function main() {
-  if ((mode === "embed" || mode === "all") && !isOpenAiConfigured()) {
+  const needsOpenAi =
+    mode === "embed" ||
+    mode === "structure" ||
+    (mode === "all" && enableStructure);
+  if (needsOpenAi && !isOpenAiConfigured()) {
     throw new Error("OPENAI_API_KEY mancante");
   }
 
@@ -246,7 +299,7 @@ async function main() {
   }
 
   console.log(
-    `Processo ${documents.length} documenti; mode=${mode}; force=${force}; dryRun=${dryRun}`
+    `Processo ${documents.length} documenti; mode=${mode}; force=${force}; dryRun=${dryRun}; ocr=${enableOcr}; structure=${enableStructure}`
   );
 
   for (let i = 0; i < documents.length; i++) {
@@ -256,6 +309,24 @@ async function main() {
 
       if (mode === "extract" || mode === "all") {
         extractedText = await extractDocument(documento);
+      }
+
+      if (mode === "structure" || mode === "all") {
+        const current = dryRun
+          ? {
+              id: documento.id,
+              extractedText,
+              extractionJson: documento.extractionJson,
+            }
+          : await prisma.documento.findUniqueOrThrow({
+              where: { id: documento.id },
+              select: {
+                id: true,
+                extractedText: true,
+                extractionJson: true,
+              },
+            });
+        await structureDocument(current);
       }
 
       if (mode === "embed" || mode === "all") {

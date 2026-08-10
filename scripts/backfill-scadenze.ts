@@ -1,7 +1,11 @@
-import "dotenv/config";
+﻿import "dotenv/config";
 
 import { prisma } from "../src/lib/db";
-import { parseScadenzaFromText } from "../src/lib/scadenza-parser";
+import {
+  parseScadenzaFromBody,
+  parseScadenzaFromText,
+  pickBestScadenza,
+} from "../src/lib/scadenza-parser";
 
 const dryRun = process.argv.includes("--dry-run");
 /** Solo match espliciti scad./fino al (confidence >= 0.8) */
@@ -20,6 +24,7 @@ async function main() {
       sottocategoria: true,
       dipendenteId: true,
       automezzoId: true,
+      extractedText: true,
     },
   });
 
@@ -27,8 +32,16 @@ async function main() {
   let skipped = 0;
 
   for (const doc of docs) {
-    const folderHint = [doc.categoria, doc.sottocategoria].filter(Boolean).join("/");
-    const parsed = parseScadenzaFromText(doc.titoloOriginale, folderHint);
+    const folderHint = [doc.categoria, doc.sottocategoria]
+      .filter(Boolean)
+      .join("/");
+    const fromName = parseScadenzaFromText(doc.titoloOriginale, folderHint);
+    const fromBody = doc.extractedText
+      ? parseScadenzaFromBody(doc.extractedText)
+      : null;
+    const parsed = fromBody
+      ? pickBestScadenza(fromName, fromBody)
+      : fromName;
 
     if (!parsed.dataScadenza || parsed.confidence < minConfidence) {
       skipped++;
@@ -37,7 +50,7 @@ async function main() {
 
     const dateIso = parsed.dataScadenza.toISOString().slice(0, 10);
     console.log(
-      `${dryRun ? "[dry] " : ""}${dateIso}  conf=${parsed.confidence}  ${parsed.rawValue}  |  ${doc.titoloOriginale}`,
+      `${dryRun ? "[dry] " : ""}${dateIso}  conf=${parsed.confidence}  ${parsed.rawValue}  |  ${doc.titoloOriginale}`
     );
 
     if (!dryRun) {
@@ -88,7 +101,7 @@ async function main() {
   }
 
   console.log(
-    `\n${dryRun ? "Would apply" : "Applied"}: ${applied}  skipped: ${skipped}  total without date: ${docs.length}`,
+    `\n${dryRun ? "Would apply" : "Applied"}: ${applied}  skipped: ${skipped}  total without date: ${docs.length}`
   );
 }
 

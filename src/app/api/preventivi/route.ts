@@ -1,58 +1,23 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import {
-  canAssignOperatore,
-  preventivoWhereForSession,
-} from "@/lib/access";
+import { canAssignOperatore } from "@/lib/access";
 import { prisma } from "@/lib/db";
-import { Prisma, StatoPreventivo } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { calcolaTotaliPreventivo } from "@/lib/preventivo-calcoli";
+import { listPreventivi } from "@/lib/preventivi-queries";
 
 export async function GET(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const stato = searchParams.get("stato") as StatoPreventivo | null;
-  const search = searchParams.get("search");
-  const page = parseInt(searchParams.get("page") ?? "1");
-  const limit = 20;
-  const skip = (page - 1) * limit;
-
-  const where: Record<string, unknown> = {
-    ...preventivoWhereForSession(session),
-  };
-
-  if (stato) where.stato = stato;
-
-  if (search) {
-    where.OR = [
-      { numeroPreventivo: { contains: search, mode: "insensitive" } },
-      { cliente: { ragioneSociale: { contains: search, mode: "insensitive" } } },
-      { introduzione: { contains: search, mode: "insensitive" } },
-    ];
-  }
-
-  const [preventivi, total] = await Promise.all([
-    prisma.preventivo.findMany({
-      where,
-      skip,
-      take: limit,
-      orderBy: { updatedAt: "desc" },
-      include: {
-        cliente: { select: { id: true, ragioneSociale: true } },
-        operatore: { select: { id: true, name: true } },
-      },
-    }),
-    prisma.preventivo.count({ where }),
-  ]);
-
-  return NextResponse.json({
-    preventivi,
-    total,
-    page,
-    totalPages: Math.ceil(total / limit),
+  const result = await listPreventivi(session, {
+    stato: searchParams.get("stato"),
+    search: searchParams.get("search"),
+    page: parseInt(searchParams.get("page") ?? "1", 10) || 1,
   });
+
+  return NextResponse.json(result);
 }
 
 export async function POST(req: Request) {

@@ -1,8 +1,10 @@
-import bcrypt from "bcryptjs";
+﻿import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import type { TariffeDipendente } from "@/lib/presenze";
+import { generateTemporaryPassword } from "@/lib/temporary-password";
 
-export const DIPENDENTE_DEFAULT_PASSWORD = "Mistral1234";
+export { generateTemporaryPassword } from "@/lib/temporary-password";
+
 export const DIPENDENTE_EMAIL_DOMAIN = "mistralimpianti.it";
 
 export function slugPersonName(value: string): string {
@@ -120,7 +122,12 @@ export async function ensureUserForDipendente(dipendente: {
   nome: string;
   cognome: string;
   userId: string | null;
-}): Promise<{ userId: string; email: string; created: boolean }> {
+}): Promise<{
+  userId: string;
+  email: string;
+  created: boolean;
+  temporaryPassword?: string;
+}> {
   if (dipendente.userId) {
     const existing = await prisma.user.findUnique({
       where: { id: dipendente.userId },
@@ -132,7 +139,8 @@ export async function ensureUserForDipendente(dipendente: {
   }
 
   const email = await uniqueEmailFor(dipendente.nome, dipendente.cognome);
-  const passwordHash = await bcrypt.hash(DIPENDENTE_DEFAULT_PASSWORD, 12);
+  const temporaryPassword = generateTemporaryPassword();
+  const passwordHash = await bcrypt.hash(temporaryPassword, 12);
   const name = `${dipendente.nome} ${dipendente.cognome}`.trim();
 
   const user = await prisma.user.create({
@@ -142,6 +150,7 @@ export async function ensureUserForDipendente(dipendente: {
       passwordHash,
       role: "OPERATORE",
       active: true,
+      mustChangePassword: true,
     },
     select: { id: true, email: true },
   });
@@ -151,7 +160,12 @@ export async function ensureUserForDipendente(dipendente: {
     data: { userId: user.id },
   });
 
-  return { userId: user.id, email: user.email, created: true };
+  return {
+    userId: user.id,
+    email: user.email,
+    created: true,
+    temporaryPassword,
+  };
 }
 
 export function weekdayDatesInMonth(year: number, month: number): Date[] {

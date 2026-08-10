@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { upsertCliente } from "@/lib/import-cliente";
@@ -14,6 +14,22 @@ export async function POST(req: Request) {
   const file = formData.get("file") as File | null;
   if (!file) {
     return NextResponse.json({ error: "File mancante" }, { status: 400 });
+  }
+
+  const MAX_IMPORT_BYTES = 10 * 1024 * 1024; // 10 MB
+  if (typeof file.size === "number" && file.size > MAX_IMPORT_BYTES) {
+    return NextResponse.json(
+      { error: "File troppo grande (max 10 MB)" },
+      { status: 413 }
+    );
+  }
+
+  const name = file.name.toLowerCase();
+  if (!name.endsWith(".xlsx") && !name.endsWith(".xls")) {
+    return NextResponse.json(
+      { error: "Formato non supportato: usa un file .xlsx" },
+      { status: 400 }
+    );
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());

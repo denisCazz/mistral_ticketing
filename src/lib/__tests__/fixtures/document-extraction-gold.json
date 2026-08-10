@@ -1,0 +1,38 @@
+﻿[
+  {
+    "id": "ple-rossi",
+    "titolo": "Rossi Mario PLE scad 15 03 2027.pdf",
+    "categoria": "PLE",
+    "entityType": "DIPENDENTE",
+    "bodyText": "Attestato di formazione PLE. Intestatario Mario Rossi. Valido fino al 15/03/2027.",
+    "expected": {
+      "dataScadenza": "2027-03-15",
+      "personaCognome": "Rossi",
+      "personaNome": "Mario",
+      "minConfidence": 0.85
+    }
+  },
+  {
+    "id": "assicurazione-targa",
+    "titolo": "Polizza AB123CD.pdf",
+    "categoria": "ASSICURAZIONI",
+    "entityType": "AUTOMEZZO",
+    "bodyText": "Contratto RCA veicolo targa AB123CD. Scadenza 01/09/2026.",
+    "expected": {
+      "dataScadenza": "2026-09-01",
+      "targa": "AB123CD",
+      "minConfidence": 0.8
+    }
+  },
+  {
+    "id": "dpi-no-scadenza",
+    "titolo": "Consegna DPI Verdi.pdf",
+    "categoria": "CONSEGNA DPI",
+    "entityType": "DIPENDENTE",
+    "bodyText": "Verbale di consegna DPI senza data di scadenza.",
+    "expected": {
+      "nonServeScadenza": true,
+      "minConfidence": 0.65
+    }
+  }
+]

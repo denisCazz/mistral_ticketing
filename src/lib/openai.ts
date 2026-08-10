@@ -1,10 +1,26 @@
-import OpenAI from "openai";
+﻿import OpenAI from "openai";
 import {
   OPENAI_API_KEY,
   OPENAI_CHAT_MODEL,
   OPENAI_EMBEDDING_MODEL,
+  OPENAI_VISION_MODEL,
 } from "@/lib/config";
 import { estimateCostUsd } from "@/lib/ai-costs";
+import {
+  DOCUMENT_EXTRACTION_JSON_SCHEMA,
+  documentExtractionSchema,
+  type DocumentExtraction,
+} from "@/lib/document-extraction-schema";
+
+function normalizeOcrText(text: string): string | null {
+  const normalized = text
+    .replace(/\u0000/g, "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return normalized.length >= 20 ? normalized : null;
+}
 
 let openai: OpenAI | null = null;
 
@@ -224,4 +240,228 @@ export function buildAiAuditCost(params: {
     embeddingTokens: params.embeddingTokens,
     embeddingModel: OPENAI_EMBEDDING_MODEL,
   });
+}
+
+export interface OcrResult {
+  text: string | null;
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+function dataUrl(mimeType: string, buf: Buffer): string {
+  return `data:${mimeType};base64,${buf.toString("base64")}`;
+}
+
+/** OCR multimodale: immagini via vision chat; PDF scansionati via Responses API. */
+export async function ocrDocumentBuffer(params: {
+  buffer: Buffer;
+  mimeType: string;
+  filename?: string;
+}): Promise<OcrResult> {
+  const client = getOpenAi();
+  const mime = params.mimeType || "application/octet-stream";
+  const isImage = mime.startsWith("image/");
+  const isPdf = mime === "application/pdf" || mime.endsWith("/pdf");
+
+  if (!isImage && !isPdf) {
+    return {
+      text: null,
+      model: OPENAI_VISION_MODEL,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+    };
+  }
+
+  const instruction =
+    "Estrai TUTTO il testo leggibile dal documento (OCR). " +
+    "Mantieni l'ordine naturale, preserva date, nomi, targhe e numeri. " +
+    "Non riassumere. Rispondi solo con il testo estratto.";
+
+  if (isImage) {
+    const res = await client.chat.completions.create({
+      model: OPENAI_VISION_MODEL,
+      temperature: 0,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: instruction },
+            {
+              type: "image_url",
+              image_url: {
+                url: dataUrl(mime, params.buffer),
+                detail: "high",
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const raw = res.choices[0]?.message?.content ?? "";
+    return {
+      text: normalizeOcrText(raw),
+      model: OPENAI_VISION_MODEL,
+      promptTokens: res.usage?.prompt_tokens ?? 0,
+      completionTokens: res.usage?.completion_tokens ?? 0,
+      totalTokens: res.usage?.total_tokens ?? 0,
+    };
+  }
+
+  // PDF: Responses API con input_file (gestisce anche scan)
+  const filename = params.filename?.replace(/[^\w.\-]+/g, "_") || "documento.pdf";
+  // Tipizzazione SDK Responses ancora in evoluzione: cast mirato sul payload file.
+  const res = await (
+    client as unknown as {
+      responses: {
+        create: (body: Record<string, unknown>) => Promise<{
+          output_text?: string;
+          output?: unknown;
+          usage?: { input_tokens?: number; output_tokens?: number };
+        }>;
+      };
+    }
+  ).responses.create({
+    model: OPENAI_VISION_MODEL,
+    temperature: 0,
+    input: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_file",
+            filename,
+            file_data: dataUrl("application/pdf", params.buffer),
+          },
+          { type: "input_text", text: instruction },
+        ],
+      },
+    ],
+  });
+
+  const raw =
+    (res as { output_text?: string }).output_text ??
+    extractResponsesText(res);
+  return {
+    text: normalizeOcrText(raw),
+    model: OPENAI_VISION_MODEL,
+    promptTokens: res.usage?.input_tokens ?? 0,
+    completionTokens: res.usage?.output_tokens ?? 0,
+    totalTokens:
+      (res.usage?.input_tokens ?? 0) + (res.usage?.output_tokens ?? 0),
+  };
+}
+
+function extractResponsesText(res: unknown): string {
+  if (!res || typeof res !== "object") return "";
+  const output = (res as { output?: unknown }).output;
+  if (!Array.isArray(output)) return "";
+  const parts: string[] = [];
+  for (const item of output) {
+    if (!item || typeof item !== "object") continue;
+    const content = (item as { content?: unknown }).content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      if (
+        block &&
+        typeof block === "object" &&
+        (block as { type?: string }).type === "output_text" &&
+        typeof (block as { text?: string }).text === "string"
+      ) {
+        parts.push((block as { text: string }).text);
+      }
+    }
+  }
+  return parts.join("\n");
+}
+
+export interface StructuredExtractionAiResult {
+  output: DocumentExtraction;
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+/** Estrazione campi strutturati con JSON Schema strict + validazione Zod. */
+export async function extractDocumentFields(params: {
+  titolo: string;
+  categoria: string;
+  sottocategoria?: string | null;
+  entityType: string;
+  text: string;
+}): Promise<StructuredExtractionAiResult> {
+  const client = getOpenAi();
+  const clipped = params.text.slice(0, 24_000);
+
+  const system = `Sei un estrattore documentale per Mistral Impianti (antincendio/elettrico/HR/flotte).
+Estrai SOLO fatti presenti nel testo. Non inventare.
+Ogni campo non nullo DEVE avere una evidence con quote testuale copiata dal documento.
+Date in formato YYYY-MM-DD.
+Se non c'è scadenza e il documento non ne richiede una (es. foto, consegna DPI senza scadenza), nonServeScadenza=true.
+confidence: 0-1 stima affidabilità complessiva.
+Rispondi solo con JSON conforme allo schema.`;
+
+  const user = `Metadati:
+- titolo: ${params.titolo}
+- categoria: ${params.categoria}
+- sottocategoria: ${params.sottocategoria ?? ""}
+- entityType: ${params.entityType}
+
+Testo documento:
+${clipped || "(vuoto)"}`;
+
+  const res = await client.chat.completions.create({
+    model: OPENAI_CHAT_MODEL,
+    temperature: 0,
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "document_extraction",
+        strict: true,
+        schema: DOCUMENT_EXTRACTION_JSON_SCHEMA,
+      },
+    },
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+  });
+
+  const raw = res.choices[0]?.message?.content ?? "{}";
+  let parsedJson: unknown = {};
+  try {
+    parsedJson = JSON.parse(raw);
+  } catch {
+    parsedJson = {};
+  }
+  const validated = documentExtractionSchema.safeParse(parsedJson);
+  const output: DocumentExtraction = validated.success
+    ? validated.data
+    : {
+        documentType: "sconosciuto",
+        personaNome: null,
+        personaCognome: null,
+        targa: null,
+        enteEmettitore: null,
+        numeroDocumento: null,
+        tipoCorso: null,
+        dataDocumento: null,
+        dataRilascio: null,
+        dataScadenza: null,
+        nonServeScadenza: false,
+        confidence: 0,
+        notes: "Risposta modello non valida rispetto allo schema",
+        evidence: [],
+      };
+
+  return {
+    output,
+    model: OPENAI_CHAT_MODEL,
+    promptTokens: res.usage?.prompt_tokens ?? 0,
+    completionTokens: res.usage?.completion_tokens ?? 0,
+    totalTokens: res.usage?.total_tokens ?? 0,
+  };
 }

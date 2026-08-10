@@ -20,7 +20,11 @@
     "import:formazione:dry": "tsx scripts/import-formazione.ts --dry-run",
     "documenti:extract": "tsx scripts/process-documenti.ts --mode=extract",
     "documenti:embed": "tsx scripts/process-documenti.ts --mode=embed",
+    "documenti:structure": "tsx scripts/process-documenti.ts --mode=structure",
     "documenti:process": "tsx scripts/process-documenti.ts --mode=all",
+    "documenti:batch-estrazioni": "tsx scripts/batch-estrazioni.ts",
+    "documenti:batch-estrazioni:force": "tsx scripts/batch-estrazioni.ts --force=true --only-pending=false",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "postinstall": "prisma generate"
   },

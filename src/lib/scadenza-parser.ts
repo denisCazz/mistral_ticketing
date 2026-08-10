@@ -1,4 +1,4 @@
-import type { FonteScadenza, StatoValidita } from "@prisma/client";
+﻿import type { FonteScadenza, StatoValidita } from "@prisma/client";
 
 export interface ParsedScadenza {
   dataScadenza: Date | null;
@@ -107,6 +107,19 @@ function withStato(
   };
 }
 
+const BODY_SCAD_PATTERNS = [
+  ...SCAD_PATTERNS,
+  ...FINO_PATTERNS,
+  /data\s+di\s+scadenza\s*[:=]?\s*(\d{1,2})[.\-\/_ ](\d{1,2})[.\-\/_ ](\d{2,4})/i,
+  /scade\s+(?:il\s+)?(\d{1,2})[.\-\/_ ](\d{1,2})[.\-\/_ ](\d{2,4})/i,
+  /validit[aà]\s+(?:fino\s+)?(?:al\s+)?(\d{1,2})[.\-\/_ ](\d{1,2})[.\-\/_ ](\d{2,4})/i,
+  /expir(?:y|es|ation)?\s*[:=]?\s*(\d{1,2})[.\-\/_ ](\d{1,2})[.\-\/_ ](\d{2,4})/i,
+];
+
+/**
+ * Estrae scadenza da filename/cartella (alta priorità sui pattern espliciti).
+ * Per corpo documento usare `parseScadenzaFromBody`.
+ */
 export function parseScadenzaFromText(
   text: string,
   folderPath?: string
@@ -198,6 +211,71 @@ export function parseScadenzaFromText(
     rawValue: null,
     statoValidita: "DA_REVISIONARE",
   };
+}
+
+/**
+ * Estrae scadenza dal corpo testuale (OCR/testo PDF).
+ * Confidence leggermente più bassa del filename esplicito se manca contesto "scad".
+ */
+export function parseScadenzaFromBody(text: string): ParsedScadenza {
+  const sample = text.slice(0, 120_000);
+  const body = matchPatterns(sample, BODY_SCAD_PATTERNS, 0.82);
+  if (body) {
+    return withStato(
+      {
+        ...body,
+        fonte: "OCR",
+      },
+      /scadut/i.test(sample)
+    );
+  }
+
+  const meseNome = sample.match(
+    /scadenza\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+(20\d{2})/i
+  );
+  if (meseNome) {
+    const m = MESI[meseNome[1].toLowerCase()];
+    const y = parseInt(meseNome[2], 10);
+    if (m) {
+      return withStato(
+        {
+          dataScadenza: new Date(Date.UTC(y, m - 1, 1)),
+          fonte: "OCR",
+          confidence: 0.58,
+          rawValue: meseNome[0],
+          statoValidita: "VALIDO",
+        },
+        false
+      );
+    }
+  }
+
+  return {
+    dataScadenza: null,
+    fonte: "OCR",
+    confidence: 0,
+    rawValue: null,
+    statoValidita: "DA_REVISIONARE",
+  };
+}
+
+/** Sceglie la migliore tra più proposte scadenza (confidence + presenza data). */
+export function pickBestScadenza(
+  ...candidates: ParsedScadenza[]
+): ParsedScadenza {
+  const withDate = candidates.filter((c) => c.dataScadenza);
+  if (withDate.length === 0) {
+    return (
+      candidates.sort((a, b) => b.confidence - a.confidence)[0] ?? {
+        dataScadenza: null,
+        fonte: "MANUALE",
+        confidence: 0,
+        rawValue: null,
+        statoValidita: "DA_REVISIONARE",
+      }
+    );
+  }
+  return withDate.sort((a, b) => b.confidence - a.confidence)[0];
 }
 
 export function giorniFinoScadenza(data: Date): number {

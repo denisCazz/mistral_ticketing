@@ -1,4 +1,4 @@
-import NextAuth from "next-auth";
+﻿import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { prisma } from "@/lib/db";
 import bcrypt from "bcryptjs";
@@ -25,6 +25,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) {
         token.id = user.id;
         token.role = (user as { role?: string }).role;
+        token.mustChangePassword = Boolean(
+          (user as { mustChangePassword?: boolean }).mustChangePassword
+        );
         token.refreshedAt = Date.now();
       }
 
@@ -33,13 +36,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (token.id) {
         const now = Date.now();
         const lastRefresh = (token.refreshedAt as number | undefined) ?? 0;
-        if (now - lastRefresh > 60_000) {
+        if (now - lastRefresh > 60_000 || user) {
           const dbUser = await prisma.user.findUnique({
             where: { id: token.id as string },
-            select: { role: true, active: true },
+            select: { role: true, active: true, mustChangePassword: true },
           });
           if (!dbUser?.active) return null;
           token.role = dbUser.role;
+          token.mustChangePassword = dbUser.mustChangePassword;
           token.refreshedAt = now;
         }
       }
@@ -50,6 +54,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (token?.id) {
         session.user.id = token.id as string;
         session.user.role = token.role as string;
+        session.user.mustChangePassword = Boolean(token.mustChangePassword);
       }
       return session;
     },
@@ -77,6 +82,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               passwordHash: true,
               role: true,
               active: true,
+              mustChangePassword: true,
             },
           });
 
@@ -98,6 +104,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             name: user.name,
             email: user.email,
             role: user.role,
+            mustChangePassword: user.mustChangePassword,
           };
         } catch (error) {
           console.error("[auth] authorize failed:", error);

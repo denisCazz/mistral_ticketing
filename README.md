@@ -1,4 +1,4 @@
-# Mistral Impianti
+﻿# Mistral Impianti
 
 Gestionale unificato per **Mistral Impianti**: preventivi con generazione AI, archivio documenti con scadenze, dipendenti/presenze/costi, magazzino con barcode, rapportini di intervento sul campo.
 
@@ -38,7 +38,10 @@ npm run dev
 
 App: http://localhost:3000
 
-**Login seed:** `admin@mistralimpianti.it` / `admin123` — cambiarla subito dopo il primo accesso.
+**Login seed:** imposta `SEED_ADMIN_PASSWORD` (min. 12 caratteri), poi `npm run db:seed`.
+Accesso: `admin@mistralimpianti.it` — al primo login è obbligatorio il cambio password.
+
+Per abilitare i rapportini: `RAPPORTINI_ENABLED=true` **e** `NEXT_PUBLIC_RAPPORTINI_ENABLED=true` (default fail-closed).
 
 ### Docker
 

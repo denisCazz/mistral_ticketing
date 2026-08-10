@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 import { calcolaTotaliPreventivo, calcolaRiga } from "@/lib/preventivo-calcoli";
 import { parseScadenzaFromText } from "@/lib/scadenza-parser";
 import {
@@ -202,5 +202,138 @@ describe("fonti risposta documentale", () => {
 
     expect(excerpt).toContain("manutenzione periodica");
     expect(excerpt.length).toBeLessThanOrEqual(280);
+  });
+});
+
+describe("parseScadenzaFromBody", () => {
+  it("estrae data di scadenza dal corpo", async () => {
+    const { parseScadenzaFromBody } = await import("@/lib/scadenza-parser");
+    const r = parseScadenzaFromBody(
+      "Attestato formazione antincendio.\nData di scadenza: 15/03/2027\nEnte: VV.F."
+    );
+    expect(r.dataScadenza?.getUTCFullYear()).toBe(2027);
+    expect(r.dataScadenza?.getUTCMonth()).toBe(2);
+    expect(r.dataScadenza?.getUTCDate()).toBe(15);
+    expect(r.fonte).toBe("OCR");
+    expect(r.confidence).toBeGreaterThanOrEqual(0.8);
+  });
+});
+
+describe("entity-match", () => {
+  it("collega dipendente univoco", async () => {
+    const { matchEntities } = await import("@/lib/entity-match");
+    const r = matchEntities({
+      personaNome: "Mario",
+      personaCognome: "Rossi",
+      dipendenti: [
+        { id: "d1", nome: "Mario", cognome: "Rossi" },
+        { id: "d2", nome: "Luca", cognome: "Bianchi" },
+      ],
+      automezzi: [],
+    });
+    expect(r.dipendenteId).toBe("d1");
+    expect(r.ambiguousDipendente).toBe(false);
+  });
+
+  it("collega targa normalizzata", async () => {
+    const { matchEntities } = await import("@/lib/entity-match");
+    const r = matchEntities({
+      targa: "ab 123 cd",
+      dipendenti: [],
+      automezzi: [{ id: "a1", targa: "AB123CD" }],
+    });
+    expect(r.automezzoId).toBe("a1");
+  });
+});
+
+describe("hybrid document extraction", () => {
+  it("auto-applica scadenza quando AI e regex concordano", async () => {
+    const { buildHybridExtraction } = await import(
+      "@/lib/document-extraction"
+    );
+    const r = buildHybridExtraction({
+      titolo: "Rossi Mario PLE scad 15 03 2027.pdf",
+      folderHint: "FORMAZIONE/PLE",
+      bodyText:
+        "Attestato PLE. Valido fino al 15/03/2027. Intestatario: Mario Rossi.",
+      aiRaw: {
+        documentType: "attestato_ple",
+        personaNome: "Mario",
+        personaCognome: "Rossi",
+        targa: null,
+        enteEmettitore: "Ente Formazione",
+        numeroDocumento: "A-1",
+        tipoCorso: "PLE",
+        dataDocumento: "2025-03-15",
+        dataRilascio: "2025-03-15",
+        dataScadenza: "2027-03-15",
+        nonServeScadenza: false,
+        confidence: 0.88,
+        notes: null,
+        evidence: [
+          {
+            field: "dataScadenza",
+            quote: "Valido fino al 15/03/2027",
+            page: 1,
+          },
+        ],
+      },
+      entityType: "DIPENDENTE",
+      dipendenti: [{ id: "d1", nome: "Mario", cognome: "Rossi" }],
+      automezzi: [],
+    });
+    expect(r.applied.dataScadenza?.toISOString().slice(0, 10)).toBe(
+      "2027-03-15"
+    );
+    expect(r.applied.confermata).toBe(true);
+    expect(r.applied.dipendenteId).toBe("d1");
+    expect(r.decision).toBe("auto_apply");
+  });
+
+  it("richiede revisione sotto soglia auto", async () => {
+    const { buildHybridExtraction } = await import(
+      "@/lib/document-extraction"
+    );
+    const r = buildHybridExtraction({
+      titolo: "documento generico.pdf",
+      bodyText: "Scadenza stimata intorno al 2028.",
+      aiRaw: {
+        documentType: "altro",
+        personaNome: null,
+        personaCognome: null,
+        targa: null,
+        enteEmettitore: null,
+        numeroDocumento: null,
+        tipoCorso: null,
+        dataDocumento: null,
+        dataRilascio: null,
+        dataScadenza: "2028-12-31",
+        nonServeScadenza: false,
+        confidence: 0.7,
+        notes: null,
+        evidence: [
+          { field: "dataScadenza", quote: "intorno al 2028", page: null },
+        ],
+      },
+      entityType: "AZIENDA",
+      dipendenti: [],
+      automezzi: [],
+    });
+    expect(r.applied.needsReview).toBe(true);
+    expect(r.applied.confermata).toBe(false);
+    expect(r.decision).toBe("needs_review");
+  });
+});
+
+describe("document AI queue", () => {
+  it("esclude errori terminali dalla coda automatica", async () => {
+    const { pendingAiWhere } = await import("@/lib/document-ai-batch");
+    const where = pendingAiWhere() as {
+      NOT?: { statoIngestione?: { in?: readonly string[] } };
+    };
+
+    expect(where.NOT?.statoIngestione?.in).toEqual(
+      expect.arrayContaining(["FAILED", "DA_REVISIONARE"])
+    );
   });
 });

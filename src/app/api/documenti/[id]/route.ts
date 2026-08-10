@@ -1,7 +1,7 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import type { StatoValidita } from "@prisma/client";
 import { auth } from "@/lib/auth";
-import { canAccessDocumentiHr } from "@/lib/access";
+import { canAccessDocumento } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { getPresignedDownloadUrl } from "@/lib/r2";
 
@@ -26,10 +26,7 @@ export async function GET(_req: Request, { params }: Params) {
     return NextResponse.json({ error: "Non trovato" }, { status: 404 });
   }
 
-  if (
-    documento.entityType === "DIPENDENTE" &&
-    !canAccessDocumentiHr(session)
-  ) {
+  if (!canAccessDocumento(session, documento)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

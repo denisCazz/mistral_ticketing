@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -22,6 +22,7 @@ import {
   Coins,
   Settings,
   Warehouse,
+  Bot,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -50,6 +51,7 @@ const navItems = [
   { href: "/dipendenti/anagrafica", label: "Dipendenti", icon: IdCard, roles: ["ADMIN"] },
   { href: "/costi", label: "Costi", icon: Coins, roles: ["ADMIN"] },
   { href: "/configurazione", label: "Configurazione", icon: Settings, roles: ["ADMIN"] },
+  { href: "/admin/documenti-ai", label: "Elaborazione AI", icon: Bot, roles: ["ADMIN"] },
   { href: "/admin/utenti", label: "Utenti", icon: UserCog, roles: ["ADMIN"] },
   { href: "/import", label: "Importa XLSX", icon: Upload, roles: ["ADMIN"] },
 ];
@@ -88,6 +90,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                 key={item.href}
                 href={item.href}
                 onClick={onNavigate}
+                aria-current={active ? "page" : undefined}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
                   active
@@ -95,7 +98,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                     : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                 )}
               >
-                <Icon className="h-4 w-4 shrink-0" />
+                <Icon className="h-4 w-4 shrink-0" aria-hidden />
                 {item.label}
               </Link>
             );
@@ -139,7 +142,7 @@ export function MobileTopbar() {
             <Button variant="ghost" size="icon" aria-label="Apri menu" />
           }
         >
-          <Menu className="h-5 w-5" />
+          <Menu className="h-5 w-5" aria-hidden />
         </SheetTrigger>
         <SheetContent side="left" className="w-72 p-0" showCloseButton={false}>
           <SheetTitle className="sr-only">Menu di navigazione</SheetTitle>

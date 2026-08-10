@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -96,9 +96,19 @@ function NuovoPreventivoContent() {
   >([]);
 
   useEffect(() => {
-    fetch("/api/clienti?limit=200")
-      .then((r) => r.json())
-      .then((d) => setClienti(d.clienti ?? []));
+    const controller = new AbortController();
+    fetch("/api/clienti?limit=200", { signal: controller.signal })
+      .then((r) => {
+        if (!r.ok) throw new Error("Clienti API error");
+        return r.json();
+      })
+      .then((d) => setClienti(d.clienti ?? []))
+      .catch((err) => {
+        if (!(err instanceof DOMException && err.name === "AbortError")) {
+          toast.error("Impossibile caricare i clienti");
+        }
+      });
+    return () => controller.abort();
   }, []);
 
   async function createCliente(e: React.FormEvent) {

@@ -1,9 +1,8 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { canAccessDocumentiHr } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import {
-  DIPENDENTE_DEFAULT_PASSWORD,
   ensureCategorieDipendente,
   ensureUserForDipendente,
   ensureUsersForDipendenti,
@@ -149,7 +148,7 @@ export async function POST(req: Request) {
   if (existing) {
     const standard = await getTariffeCategoria(existing.categoriaId);
     if (!existing.userId) {
-      await ensureUserForDipendente(existing);
+      const created = await ensureUserForDipendente(existing);
       const refreshed = await prisma.dipendente.findUnique({
         where: { id: existing.id },
         include: {
@@ -164,6 +163,16 @@ export async function POST(req: Request) {
             standard,
             refreshed.user?.email
           ),
+          ...(created.temporaryPassword
+            ? {
+                credenziali: {
+                  utente: created.email.split("@")[0],
+                  email: created.email,
+                  password: created.temporaryPassword,
+                  deveCambiarePassword: true,
+                },
+              }
+            : {}),
         });
       }
     }
@@ -182,7 +191,7 @@ export async function POST(req: Request) {
     },
   });
 
-  const { email } = await ensureUserForDipendente({
+  const { email, temporaryPassword } = await ensureUserForDipendente({
     id: dipendente.id,
     nome: dipendente.nome,
     cognome: dipendente.cognome,
@@ -214,7 +223,8 @@ export async function POST(req: Request) {
       credenziali: {
         utente: email.split("@")[0],
         email,
-        password: DIPENDENTE_DEFAULT_PASSWORD,
+        password: temporaryPassword,
+        deveCambiarePassword: true,
       },
     },
     { status: 201 }

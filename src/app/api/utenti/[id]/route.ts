@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import bcrypt from "bcryptjs";
@@ -32,7 +32,10 @@ export async function PATCH(
   if (name !== undefined) updateData.name = name;
   if (role !== undefined) updateData.role = role;
   if (active !== undefined) updateData.active = active;
-  if (password) updateData.passwordHash = await bcrypt.hash(password, 12);
+  if (password) {
+    updateData.passwordHash = await bcrypt.hash(password, 12);
+    updateData.mustChangePassword = true;
+  }
 
   const user = await prisma.user.update({
     where: { id },

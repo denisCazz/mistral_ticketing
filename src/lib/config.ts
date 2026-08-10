@@ -1,7 +1,6 @@
-/** Feature flags e configurazione runtime. */
+﻿/** Feature flags e configurazione runtime. Fail-closed: default OFF. */
 export const RAPPORTINI_ENABLED =
-  process.env.RAPPORTINI_ENABLED !== "false";
-
+  process.env.RAPPORTINI_ENABLED === "true";
 export const CRON_SECRET = process.env.CRON_SECRET ?? "";
 
 export const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? "";
@@ -9,6 +8,15 @@ export const OPENAI_EMBEDDING_MODEL =
   process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small";
 export const OPENAI_CHAT_MODEL =
   process.env.OPENAI_CHAT_MODEL ?? "gpt-4o-mini";
+/** Modello vision/OCR (PDF scansionati e immagini). */
+export const OPENAI_VISION_MODEL =
+  process.env.OPENAI_VISION_MODEL ?? OPENAI_CHAT_MODEL;
+
+/** Soglie confidence estrazione documenti. */
+export const EXTRACTION_AUTO_APPLY = 0.9;
+export const EXTRACTION_REVIEW_MIN = 0.65;
+/** Sotto questa lunghezza testo → fallback OCR multimodale. */
+export const OCR_MIN_TEXT_CHARS = 40;
 
 export const DOCUMENTI_SOURCE_PATH =
   process.env.DOCUMENTI_SOURCE_PATH ?? "";

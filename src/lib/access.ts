@@ -1,4 +1,4 @@
-import type { Session } from "next-auth";
+﻿import type { Session } from "next-auth";
 import type { StatoPreventivo } from "@prisma/client";
 import {
   statiPreventivoConsentiti,
@@ -56,4 +56,43 @@ export function canAccessPreventivo(
 
 export function canAccessDocumentiHr(session: Session | null): boolean {
   return session?.user?.role === "ADMIN";
+}
+
+/** Categorie riservate HR (allineate a lista / dettaglio / file / RAG). */
+export const DOCUMENTI_HR_CATEGORIE = [
+  "UNILAV",
+  "DOC",
+  "IDONEITA",
+  "F24",
+  "DURC",
+  "DURF",
+] as const;
+
+type DocumentoAccess = {
+  entityType: string;
+  categoria: string;
+};
+
+/** Filtro Prisma per escludere documenti HR quando l'utente non può accedervi. */
+export function documentiHrWhere(canHr: boolean): Record<string, unknown> {
+  if (canHr) return {};
+  return {
+    entityType: { not: "DIPENDENTE" },
+    categoria: {
+      notIn: [...DOCUMENTI_HR_CATEGORIE],
+    },
+  };
+}
+
+/** Policy unica: lista, dettaglio, file e RAG devono usare questa. */
+export function canAccessDocumento(
+  session: Session | null,
+  documento: DocumentoAccess
+): boolean {
+  if (!session?.user?.role) return false;
+  if (canAccessDocumentiHr(session)) return true;
+  if (documento.entityType === "DIPENDENTE") return false;
+  return !(DOCUMENTI_HR_CATEGORIE as readonly string[]).includes(
+    documento.categoria
+  );
 }

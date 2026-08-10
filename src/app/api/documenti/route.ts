@@ -1,21 +1,11 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { canAccessDocumentiHr } from "@/lib/access";
+import { canAccessDocumentiHr, documentiHrWhere } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { isAiWhitelistCandidate } from "@/lib/document-whitelist";
 import { headR2Object, isR2Configured } from "@/lib/r2";
 import type { EntityType, StatoValidita } from "@prisma/client";
 import { parseScadenzaFromText } from "@/lib/scadenza-parser";
-
-function hrWhere(canHr: boolean): Record<string, unknown> {
-  if (canHr) return {};
-  return {
-    entityType: { not: "DIPENDENTE" },
-    categoria: {
-      notIn: ["UNILAV", "DOC", "IDONEITA", "F24", "DURC", "DURF"],
-    },
-  };
-}
 
 function categoriaSearchTerm(categoria: string): string {
   const aliases: Record<string, string> = {
@@ -56,7 +46,7 @@ export async function GET(req: Request) {
   ];
 
   if (!canHr) {
-    and.push(hrWhere(false));
+    and.push(documentiHrWhere(false));
     if (entityType === "DIPENDENTE" || dipendenteId) {
       return NextResponse.json({
         documenti: [],

@@ -1,0 +1,28 @@
+﻿name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/ci?schema=public
+          NEXTAUTH_SECRET: ci-secret-at-least-32-characters-long
+          NEXTAUTH_URL: http://localhost:3000
+          RAPPORTINI_ENABLED: "false"
+          NEXT_PUBLIC_RAPPORTINI_ENABLED: "false"

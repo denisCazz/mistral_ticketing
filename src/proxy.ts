@@ -1,9 +1,11 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { RAPPORTINI_ENABLED } from "@/lib/config";
 
-export default auth((req: NextRequest & { auth: { user?: { role?: string } } | null }) => {
+type AuthUser = { role?: string; mustChangePassword?: boolean };
+
+export default auth((req: NextRequest & { auth: { user?: AuthUser } | null }) => {
   const { pathname } = req.nextUrl;
 
   // Allow public routes
@@ -24,6 +26,22 @@ export default auth((req: NextRequest & { auth: { user?: { role?: string } } | n
     return NextResponse.redirect(loginUrl);
   }
 
+  if (req.auth.user?.mustChangePassword) {
+    const allowed =
+      pathname.startsWith("/cambio-password") ||
+      pathname.startsWith("/api/account/password") ||
+      pathname.startsWith("/api/auth");
+    if (!allowed) {
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json(
+          { error: "Cambio password obbligatorio" },
+          { status: 403 }
+        );
+      }
+      return NextResponse.redirect(new URL("/cambio-password", req.url));
+    }
+  }
+
   // Rapportini disabilitati
   if (
     !RAPPORTINI_ENABLED &&
@@ -42,6 +60,7 @@ export default auth((req: NextRequest & { auth: { user?: { role?: string } } | n
     pathname.startsWith("/dipendenti") ||
     pathname.startsWith("/costi") ||
     pathname.startsWith("/configurazione") ||
+    pathname.startsWith("/api/admin") ||
     pathname.startsWith("/api/presenze") ||
     pathname.startsWith("/api/costi") ||
     pathname.startsWith("/api/configurazione")

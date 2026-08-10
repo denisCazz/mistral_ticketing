@@ -43,6 +43,7 @@ enum StatoIngestione {
 enum FonteScadenza {
   FILENAME
   OCR
+  AI
   MANUALE
   FOLDER
 }
@@ -68,16 +69,17 @@ enum TipoMovimentoMagazzino {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  name         String
-  email        String   @unique
-  passwordHash String
-  role         Role     @default(OPERATORE)
-  active       Boolean  @default(true)
-  firma        String?
-  qualifica    String?
-  telefono     String?
-  createdAt    DateTime @default(now())
+  id                 String   @id @default(cuid())
+  name               String
+  email              String   @unique
+  passwordHash       String
+  role               Role     @default(OPERATORE)
+  active             Boolean  @default(true)
+  mustChangePassword Boolean  @default(false)
+  firma              String?
+  qualifica          String?
+  telefono           String?
+  createdAt          DateTime @default(now())
 
   preventiviComeOperatore Preventivo[]        @relation("PreventivoOperatore")
   cambiamentiPreventivo   PreventivoStoria[]
@@ -336,6 +338,9 @@ model Documento {
   statoIngestione      StatoIngestione @default(PENDING)
   aiWhitelist          Boolean         @default(false)
   extractedText        String?
+  /// Payload estrazione strutturata (campi, evidence, confidence, match)
+  extractionJson       Json?
+  extractionAt         DateTime?
   sourcePath           String?
   canonicalDocumentoId String?
   createdAt            DateTime        @default(now())

@@ -1,4 +1,4 @@
-import { Pool } from "pg";
+﻿import { Pool } from "pg";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -67,6 +67,21 @@ const statements = [
       FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
   EXCEPTION WHEN duplicate_object THEN NULL;
   END $$;`,
+
+  // Document structured extraction
+  `DO $$ BEGIN
+    IF NOT EXISTS (
+      SELECT 1
+      FROM pg_enum e
+      JOIN pg_type t ON e.enumtypid = t.oid
+      WHERE t.typname = 'FonteScadenza' AND e.enumlabel = 'AI'
+    ) THEN
+      ALTER TYPE "FonteScadenza" ADD VALUE 'AI';
+    END IF;
+  END $$;`,
+  `ALTER TABLE "Documento" ADD COLUMN IF NOT EXISTS "extractionJson" JSONB;`,
+  `ALTER TABLE "Documento" ADD COLUMN IF NOT EXISTS "extractionAt" TIMESTAMP(3);`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "mustChangePassword" BOOLEAN NOT NULL DEFAULT false`,
 ];
 
 const client = await pool.connect();

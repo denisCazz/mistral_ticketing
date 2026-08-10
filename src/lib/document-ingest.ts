@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+﻿import { createHash } from "crypto";
 import { readFile } from "fs/promises";
 import { PDFParse } from "pdf-parse";
 import mammoth from "mammoth";
@@ -6,10 +6,19 @@ import {
   simpleParser,
   type AddressObject,
 } from "mailparser";
+import { OCR_MIN_TEXT_CHARS } from "@/lib/config";
 
 export function sha256Buffer(buf: Buffer): string {
   return createHash("sha256").update(buf).digest("hex");
 }
+
+export type TextExtractSource = "native" | "ocr" | "none";
+
+export type TextExtractResult = {
+  text: string | null;
+  source: TextExtractSource;
+  ocrTokens?: number;
+};
 
 export async function extractTextFromBuffer(
   buf: Buffer,
@@ -55,12 +64,66 @@ export async function extractTextFromBuffer(
   if (mimeType === "application/rtf" || mimeType === "text/rtf") {
     return normalizeExtractedText(extractRtfText(buf.toString("latin1")));
   }
-  if (
-    mimeType.startsWith("text/")
-  ) {
+  if (mimeType.startsWith("text/")) {
     return normalizeExtractedText(buf.toString("utf8").slice(0, 500000));
   }
+  if (mimeType.startsWith("image/")) {
+    return null;
+  }
   return null;
+}
+
+/**
+ * Estrazione testo con fallback OCR multimodale (PDF scansionati / immagini).
+ */
+export async function extractTextWithOcrFallback(params: {
+  buffer: Buffer;
+  mimeType: string;
+  filename?: string;
+  enableOcr?: boolean;
+}): Promise<TextExtractResult> {
+  const native = await extractTextFromBuffer(params.buffer, params.mimeType);
+  const normalized = native ? normalizeExtractedText(native) : null;
+  const enough =
+    normalized != null && normalized.length >= OCR_MIN_TEXT_CHARS;
+
+  if (enough) {
+    return { text: normalized, source: "native" };
+  }
+
+  const canOcr =
+    params.enableOcr !== false &&
+    (params.mimeType.startsWith("image/") ||
+      params.mimeType === "application/pdf" ||
+      params.mimeType.endsWith("/pdf"));
+
+  if (!canOcr) {
+    return { text: normalized, source: normalized ? "native" : "none" };
+  }
+
+  const { isOpenAiConfigured, ocrDocumentBuffer } = await import("@/lib/openai");
+  if (!isOpenAiConfigured()) {
+    return { text: normalized, source: normalized ? "native" : "none" };
+  }
+
+  try {
+    const ocr = await ocrDocumentBuffer({
+      buffer: params.buffer,
+      mimeType: params.mimeType,
+      filename: params.filename,
+    });
+    if (ocr.text && ocr.text.length > (normalized?.length ?? 0)) {
+      return {
+        text: ocr.text,
+        source: "ocr",
+        ocrTokens: ocr.totalTokens,
+      };
+    }
+  } catch (err) {
+    console.error("OCR fallback failed:", err);
+  }
+
+  return { text: normalized, source: normalized ? "native" : "none" };
 }
 
 function formatMailAddresses(
@@ -113,6 +176,10 @@ export function mimeFromExt(ext: string): string {
     rar: "application/x-rar-compressed",
     eml: "message/rfc822",
     bmp: "image/bmp",
+    webp: "image/webp",
+    tif: "image/tiff",
+    tiff: "image/tiff",
+    txt: "text/plain",
   };
   return map[ext.toLowerCase()] ?? "application/octet-stream";
 }

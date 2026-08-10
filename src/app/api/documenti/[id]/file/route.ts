@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { canAccessDocumentiHr } from "@/lib/access";
+import { canAccessDocumento } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { isR2Configured, streamFromR2 } from "@/lib/r2";
 
@@ -41,6 +41,7 @@ export async function GET(_req: Request, { params }: Params) {
       mimeType: true,
       titoloOriginale: true,
       entityType: true,
+      categoria: true,
       sizeBytes: true,
     },
   });
@@ -49,10 +50,7 @@ export async function GET(_req: Request, { params }: Params) {
     return NextResponse.json({ error: "Non trovato" }, { status: 404 });
   }
 
-  if (
-    documento.entityType === "DIPENDENTE" &&
-    !canAccessDocumentiHr(session)
-  ) {
+  if (!canAccessDocumento(session, documento)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import {
@@ -9,6 +9,7 @@ import {
 } from "@/lib/openai";
 import { searchSimilarChunks } from "@/lib/rag";
 import { OPENAI_CHAT_MODEL } from "@/lib/config";
+import { canAccessDocumentiHr, documentiHrWhere } from "@/lib/access";
 import { groupChunksByDocument } from "@/lib/document-answer-sources";
 
 const MIN_SIMILARITY = 0.35;
@@ -55,7 +56,12 @@ export async function POST(req: Request) {
     );
   }
 
-  const ranked = await searchSimilarChunks(queryEmbedding, 16, question);
+  const ranked = await searchSimilarChunks(
+    queryEmbedding,
+    16,
+    question,
+    documentiHrWhere(canAccessDocumentiHr(session))
+  );
   const dynamicCutoff = ranked.length
     ? Math.max(MIN_SIMILARITY, ranked[0].relevance - 0.1)
     : MIN_SIMILARITY;

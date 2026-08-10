@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/db";
+﻿import { prisma } from "@/lib/db";
 import { OPENAI_EMBEDDING_MODEL } from "@/lib/config";
 
 function cosineSimilarity(a: number[], b: number[]): number {
@@ -89,7 +89,8 @@ function lexicalRelevance(
 export async function searchSimilarChunks(
   embedding: number[],
   limit = 8,
-  query?: string
+  query?: string,
+  documentoFilter: Record<string, unknown> = {}
 ): Promise<
   Array<{
     id: string;
@@ -123,6 +124,7 @@ export async function searchSimilarChunks(
           is: {
             aiWhitelist: true,
             statoIngestione: "READY",
+            ...documentoFilter,
           },
         },
       },

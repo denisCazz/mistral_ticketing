@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { canAccessPreventivo } from "@/lib/access";
+import { canAccessPreventivo, canAccessDocumentiHr, documentiHrWhere } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import {
   isOpenAiConfigured,
@@ -57,7 +57,12 @@ export async function POST(req: Request, { params }: Params) {
     );
   }
 
-  const chunks = await searchSimilarChunks(queryEmbedding, 6);
+  const chunks = await searchSimilarChunks(
+    queryEmbedding,
+    6,
+    prompt,
+    documentiHrWhere(canAccessDocumentiHr(session))
+  );
 
   const clienteInfo = [
     preventivo.cliente.ragioneSociale,

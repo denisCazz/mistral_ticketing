@@ -1,6 +1,6 @@
-"use client";
+﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -85,10 +85,12 @@ export function ClienteFormDialog({
 }) {
   const [form, setForm] = useState<ClienteForm>(EMPTY);
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
+  const formKey = `${open}|${cliente?.id ?? "new"}`;
+  const [prevFormKey, setPrevFormKey] = useState(formKey);
+  if (prevFormKey !== formKey) {
+    setPrevFormKey(formKey);
     if (open) setForm(cliente ? clienteToForm(cliente) : EMPTY);
-  }, [open, cliente]);
+  }
 
   async function saveCliente(e: React.FormEvent) {
     e.preventDefault();

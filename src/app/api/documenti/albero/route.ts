@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { canAccessDocumentiHr } from "@/lib/access";
+import { canAccessDocumentiHr, documentiHrWhere } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import {
   canonicalCategoria,
@@ -19,16 +19,6 @@ type TreeNode = {
   children?: TreeNode[];
 };
 
-function hrWhere(canHr: boolean): Record<string, unknown> {
-  if (canHr) return {};
-  return {
-    entityType: { not: "DIPENDENTE" },
-    categoria: {
-      notIn: ["UNILAV", "DOC", "IDONEITA", "F24", "DURC", "DURF"],
-    },
-  };
-}
-
 export async function GET() {
   const session = await auth();
   if (!session) {
@@ -38,7 +28,7 @@ export async function GET() {
   const canHr = canAccessDocumentiHr(session);
   const where = {
     canonicalDocumentoId: null,
-    ...hrWhere(canHr),
+    ...documentiHrWhere(canHr),
   };
 
   const [grouped, total] = await Promise.all([
