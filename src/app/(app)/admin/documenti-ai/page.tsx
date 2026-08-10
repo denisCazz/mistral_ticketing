@@ -168,7 +168,11 @@ export default function DocumentiAiAdminPage() {
 
   async function startProcessing() {
     if (running) return;
-    if (!stats?.openaiConfigured && (enableStructure || enableRag || enableOcr)) {
+    if (
+      stats &&
+      !stats.openaiConfigured &&
+      (enableStructure || enableRag || enableOcr)
+    ) {
       toast.error("OPENAI_API_KEY non configurata");
       return;
     }
@@ -256,14 +260,16 @@ export default function DocumentiAiAdminPage() {
         </Button>
       </div>
 
-      {!stats?.openaiConfigured && (
+      {stats !== null && !stats.openaiConfigured && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          OPENAI_API_KEY non configurata: OCR/struttura AI non disponibili.
+          Processo server non vede OPENAI_API_KEY: OCR/struttura AI non
+          disponibili.
         </div>
       )}
-      {!stats?.r2Configured && (
+      {stats !== null && !stats.r2Configured && (
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-          R2 non configurato: serve path locale `DOCUMENTI_SOURCE_PATH` per leggere i file.
+          Processo server non vede configurazione R2 completa: serve
+          `DOCUMENTI_SOURCE_PATH` per leggere i file localmente.
         </div>
       )}
 

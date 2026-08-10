@@ -7,7 +7,7 @@ import { isOpenAiConfigured } from "@/lib/openai";
 import { structureDocumento } from "@/lib/document-structure";
 import { indexDocumentoChunks } from "@/lib/rag";
 import { DOCUMENTI_SOURCE_PATH } from "@/lib/config";
-import type { Prisma } from "@prisma/client";
+import { pendingAiWhere } from "@/lib/document-ai-queue";
 
 export type DocumentiAiRowStatus = "OK" | "SKIP" | "REVIEW" | "FAIL";
 
@@ -83,29 +83,6 @@ async function loadDocumentBuffer(documento: {
     return downloadFromR2(documento.storageKey);
   }
   throw new Error("File non trovato (path locale / R2)");
-}
-
-/** Condizione coda: nuovi PENDING, testo/struttura mancanti, whitelist senza embedding. */
-export function pendingAiWhere(): Prisma.DocumentoWhereInput {
-  return {
-    canonicalDocumentoId: null as string | null,
-    NOT: {
-      statoIngestione: { in: ["FAILED", "DA_REVISIONARE"] },
-    },
-    OR: [
-      { statoIngestione: "PENDING" as const },
-      { extractedText: null },
-      { extractedText: "" },
-      { extractionAt: null },
-      {
-        AND: [
-          { aiWhitelist: true },
-          { extractedText: { not: null } },
-          { chunks: { none: {} } },
-        ],
-      },
-    ],
-  };
 }
 
 export async function getDocumentiAiStats(): Promise<DocumentiAiStats> {

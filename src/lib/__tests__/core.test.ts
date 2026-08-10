@@ -327,7 +327,7 @@ describe("hybrid document extraction", () => {
 
 describe("document AI queue", () => {
   it("esclude errori terminali dalla coda automatica", async () => {
-    const { pendingAiWhere } = await import("@/lib/document-ai-batch");
+    const { pendingAiWhere } = await import("@/lib/document-ai-queue");
     const where = pendingAiWhere() as {
       NOT?: { statoIngestione?: { in?: readonly string[] } };
     };
@@ -335,5 +335,22 @@ describe("document AI queue", () => {
     expect(where.NOT?.statoIngestione?.in).toEqual(
       expect.arrayContaining(["FAILED", "DA_REVISIONARE"])
     );
+  });
+});
+
+describe("document AI admin configuration status", () => {
+  it("non segnala chiavi mancanti prima del caricamento stats", async () => {
+    const React = await import("react");
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const { default: DocumentiAiAdminPage } = await import(
+      "@/app/(app)/admin/documenti-ai/page"
+    );
+
+    const html = renderToStaticMarkup(
+      React.createElement(DocumentiAiAdminPage)
+    );
+
+    expect(html).not.toContain("OPENAI_API_KEY non configurata");
+    expect(html).not.toContain("R2 non configurato");
   });
 });
