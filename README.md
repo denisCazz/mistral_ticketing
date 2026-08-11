@@ -50,9 +50,10 @@ export NEXTAUTH_SECRET="$(openssl rand -base64 32)"
 docker compose up --build
 ```
 
-All'avvio Compose esegue automaticamente il servizio one-shot `db-sync`
-(`prisma/sync-schema.mjs`: DDL + pgvector + embedding v2), poi parte
-`app` e `worker`. Non serve lanciare `npm run db:sync` a mano in Docker.
+All'avvio i container `app` e `worker` eseguono automaticamente
+`prisma/sync-schema.mjs` (DDL + pgvector + embedding v2) e poi partono.
+Se lo sync fallisce viene loggato un warning ma il server resta su
+(evita Bad Gateway). Non serve `npm run db:sync` a mano in Docker.
 Le variabili per R2/OpenAI/Resend/cron si passano via ambiente
 (`docker compose` le propaga da `.env`).
 
@@ -76,7 +77,7 @@ npm run db:sync
 npm run documenti:worker
 ```
 
-Con Docker lo sync e il `worker` partono da soli con `docker compose up`.
+Con Docker lo sync parte da solo all'avvio di `app`/`worker`.
 In locale senza Compose il secondo comando deve restare attivo in un
 terminale separato. I nuovi documenti creano
 un job `FULL_PIPELINE`; l'azione admin **Reindicizza tutti in v2** crea job

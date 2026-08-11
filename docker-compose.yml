@@ -1,15 +1,4 @@
 ﻿services:
-  db-sync:
-    build:
-      context: .
-      target: db-sync
-    environment:
-      DATABASE_URL: "postgresql://mistral:mistral123@db:5432/mistral_impianti?schema=public"
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: "no"
-
   app:
     build:
       context: .
@@ -43,8 +32,6 @@
     depends_on:
       db:
         condition: service_healthy
-      db-sync:
-        condition: service_completed_successfully
     restart: unless-stopped
 
   worker:
@@ -71,8 +58,6 @@
     depends_on:
       db:
         condition: service_healthy
-      db-sync:
-        condition: service_completed_successfully
     restart: unless-stopped
 
   db:

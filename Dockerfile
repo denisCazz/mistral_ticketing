@@ -52,17 +52,8 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-# Safety net if the image is run without compose `db-sync`
-CMD ["sh", "-c", "node prisma/sync-schema.mjs && node server.js"]
-
-# One-shot schema sync (pgvector + DDL idempotente)
-FROM base AS db-sync
-WORKDIR /app
-ENV NODE_ENV=production
-COPY --from=deps /app/node_modules ./node_modules
-COPY package.json package-lock.json prisma.config.ts ./
-COPY prisma ./prisma
-CMD ["node", "prisma/sync-schema.mjs"]
+# Sync schema all'avvio; il server parte anche se lo sync va in warning
+CMD ["sh", "-c", "node prisma/sync-schema.mjs || echo \"WARN: schema sync failed, starting anyway\"; exec node server.js"]
 
 # Background document AI worker
 FROM base AS worker
@@ -75,4 +66,4 @@ COPY prisma ./prisma
 COPY scripts ./scripts
 COPY src ./src
 
-CMD ["npm", "run", "documenti:worker"]
+CMD ["sh", "-c", "node prisma/sync-schema.mjs || echo \"WARN: schema sync failed, starting worker anyway\"; exec npm run documenti:worker"]

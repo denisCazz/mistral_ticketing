@@ -58,8 +58,16 @@ CREATE INDEX IF NOT EXISTS "DocumentoChunk_embeddingProfile_idx"
   ON "DocumentoChunk"("embeddingProfile");
 CREATE INDEX IF NOT EXISTS "DocumentoChunk_embeddingVersion_idx"
   ON "DocumentoChunk"("embeddingVersion");
-CREATE INDEX IF NOT EXISTS "DocumentoChunk_fts_it_idx"
-  ON "DocumentoChunk" USING GIN (to_tsvector('italian', content));
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS "DocumentoChunk_fts_it_idx"
+    ON "DocumentoChunk" USING GIN (to_tsvector('italian', content));
+EXCEPTION
+  WHEN undefined_object THEN
+    -- fallback se la configurazione 'italian' non è installata sul DB
+    CREATE INDEX IF NOT EXISTS "DocumentoChunk_fts_it_idx"
+      ON "DocumentoChunk" USING GIN (to_tsvector('simple', content));
+  WHEN duplicate_table THEN NULL;
+END $$;
 
 CREATE TABLE IF NOT EXISTS "DocumentoEmbedding" (
   "id" TEXT NOT NULL,

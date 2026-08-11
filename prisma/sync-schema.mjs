@@ -1,7 +1,12 @@
 ﻿import { Pool } from "pg";
 import { readFile } from "node:fs/promises";
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) {
+  console.error("DATABASE_URL mancante: impossibile sincronizzare lo schema.");
+  process.exit(1);
+}
+
 const embeddingV2Migration = await readFile(
   new URL(
     "./migrations/20260810170000_embedding_v2/migration.sql",
@@ -28,7 +33,6 @@ const statements = [
   `CREATE TABLE IF NOT EXISTS "Articolo" (
     "id" TEXT NOT NULL,
     "codice" TEXT NOT NULL,
-    "ean" TEXT,
     "nome" TEXT NOT NULL,
     "descrizione" TEXT,
     "unitaMisura" TEXT NOT NULL DEFAULT 'pz',
@@ -36,6 +40,7 @@ const statements = [
     "sogliaMinima" DECIMAL(12,3) NOT NULL DEFAULT 0,
     "ubicazione" TEXT,
     "attivo" BOOLEAN NOT NULL DEFAULT true,
+    "ean" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "Articolo_pkey" PRIMARY KEY ("id")
@@ -111,11 +116,50 @@ const statements = [
   END $$;`,
 ];
 
-const client = await pool.connect();
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function connectWithRetry(pool, attempts = 30, delayMs = 2000) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const client = await pool.connect();
+      console.log(`DB connesso (tentativo ${attempt}/${attempts}).`);
+      return client;
+    } catch (error) {
+      lastError = error;
+      console.warn(
+        `DB non pronto (tentativo ${attempt}/${attempts}):`,
+        error instanceof Error ? error.message : error
+      );
+      await sleep(delayMs);
+    }
+  }
+  throw lastError;
+}
+
+const pool = new Pool({ connectionString: DATABASE_URL });
+const client = await connectWithRetry(pool);
+
 try {
   for (const sql of statements) {
-    await client.query(sql);
-    console.log("OK:", sql.trim().split("\n")[0]);
+    try {
+      await client.query(sql);
+      console.log("OK:", sql.trim().split("\n")[0]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // Non bloccare l'app per indici FTS/opzionali già presenti o non supportati.
+      if (
+        /DocumentoChunk_fts_it_idx|text search configuration|already exists|duplicate key/i.test(
+          message
+        )
+      ) {
+        console.warn("SKIP (non bloccante):", message);
+        continue;
+      }
+      throw error;
+    }
   }
   console.log("Schema sincronizzato con successo.");
 } catch (error) {
