@@ -7,6 +7,41 @@ if (!DATABASE_URL) {
   process.exit(1);
 }
 
+/** Split SQL file into executable statements, keeping DO $$ ... $$; blocks intact. */
+function splitSqlStatements(sql) {
+  const statements = [];
+  let current = "";
+  let inDollar = false;
+  for (let i = 0; i < sql.length; i++) {
+    const ch = sql[i];
+    const next = sql[i + 1];
+    if (!inDollar && ch === "$" && next === "$") {
+      inDollar = true;
+      current += "$$";
+      i++;
+      continue;
+    }
+    if (inDollar && ch === "$" && next === "$") {
+      inDollar = false;
+      current += "$$";
+      i++;
+      continue;
+    }
+    if (!inDollar && ch === ";") {
+      const trimmed = current.trim();
+      if (trimmed && !trimmed.startsWith("--")) {
+        statements.push(trimmed);
+      }
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  const tail = current.trim();
+  if (tail && !tail.startsWith("--")) statements.push(tail);
+  return statements;
+}
+
 const embeddingV2Migration = await readFile(
   new URL(
     "./migrations/20260810170000_embedding_v2/migration.sql",
@@ -16,15 +51,11 @@ const embeddingV2Migration = await readFile(
 );
 
 const statements = [
-  // Drop legacy Pratica tables if present
   `DROP TABLE IF EXISTS "PraticaStoria" CASCADE;`,
   `DROP TABLE IF EXISTS "Pratica" CASCADE;`,
   `DROP TABLE IF EXISTS "Cat" CASCADE;`,
-
-  // Remove legacy Rapportino.praticaId if present
   `ALTER TABLE "Rapportino" DROP COLUMN IF EXISTS "praticaId";`,
 
-  // Magazzino
   `DO $$ BEGIN
     CREATE TYPE "TipoMovimentoMagazzino" AS ENUM ('ENTRATA', 'USCITA', 'RETTIFICA');
   EXCEPTION WHEN duplicate_object THEN NULL;
@@ -81,7 +112,6 @@ const statements = [
   EXCEPTION WHEN duplicate_object THEN NULL;
   END $$;`,
 
-  // Document structured extraction
   `DO $$ BEGIN
     IF NOT EXISTS (
       SELECT 1
@@ -95,7 +125,9 @@ const statements = [
   `ALTER TABLE "Documento" ADD COLUMN IF NOT EXISTS "extractionJson" JSONB;`,
   `ALTER TABLE "Documento" ADD COLUMN IF NOT EXISTS "extractionAt" TIMESTAMP(3);`,
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "mustChangePassword" BOOLEAN NOT NULL DEFAULT false`,
-  embeddingV2Migration,
+
+  ...splitSqlStatements(embeddingV2Migration),
+
   `DO $$ BEGIN
     CREATE EXTENSION IF NOT EXISTS vector;
   EXCEPTION
@@ -108,13 +140,29 @@ const statements = [
         ADD COLUMN IF NOT EXISTS "embeddingVector" vector(1536);
       ALTER TABLE "DocumentoEmbedding"
         ADD COLUMN IF NOT EXISTS "centroidVector" vector(1536);
-      CREATE INDEX IF NOT EXISTS "DocumentoChunk_embeddingVector_hnsw"
-        ON "DocumentoChunk" USING hnsw ("embeddingVector" vector_cosine_ops);
-      CREATE INDEX IF NOT EXISTS "DocumentoEmbedding_centroidVector_hnsw"
-        ON "DocumentoEmbedding" USING hnsw ("centroidVector" vector_cosine_ops);
+    END IF;
+  END $$;`,
+  // Indici HNSW opzionali: non devono bloccare lo sync della coda
+  `DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+      BEGIN
+        CREATE INDEX IF NOT EXISTS "DocumentoChunk_embeddingVector_hnsw"
+          ON "DocumentoChunk" USING hnsw ("embeddingVector" vector_cosine_ops);
+      EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE 'HNSW chunk index skipped: %', SQLERRM;
+      END;
+      BEGIN
+        CREATE INDEX IF NOT EXISTS "DocumentoEmbedding_centroidVector_hnsw"
+          ON "DocumentoEmbedding" USING hnsw ("centroidVector" vector_cosine_ops);
+      EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE 'HNSW centroid index skipped: %', SQLERRM;
+      END;
     END IF;
   END $$;`,
 ];
+
+const OPTIONAL_SQL =
+  /DocumentoChunk_fts_|embeddingVector_hnsw|centroidVector_hnsw|text search configuration|already exists|duplicate key|does not exist/i;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -141,27 +189,30 @@ async function connectWithRetry(pool, attempts = 30, delayMs = 2000) {
 
 const pool = new Pool({ connectionString: DATABASE_URL });
 const client = await connectWithRetry(pool);
+let hardFailures = 0;
 
 try {
   for (const sql of statements) {
     try {
       await client.query(sql);
-      console.log("OK:", sql.trim().split("\n")[0]);
+      console.log("OK:", sql.trim().split("\n")[0].slice(0, 120));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      // Non bloccare l'app per indici FTS/opzionali già presenti o non supportati.
-      if (
-        /DocumentoChunk_fts_it_idx|text search configuration|already exists|duplicate key/i.test(
-          message
-        )
-      ) {
+      if (OPTIONAL_SQL.test(message) || OPTIONAL_SQL.test(sql)) {
         console.warn("SKIP (non bloccante):", message);
         continue;
       }
-      throw error;
+      hardFailures += 1;
+      console.error("FAIL:", message);
+      console.error("SQL:", sql.trim().split("\n")[0].slice(0, 200));
     }
   }
-  console.log("Schema sincronizzato con successo.");
+  if (hardFailures > 0) {
+    console.error(`Schema sync completato con ${hardFailures} errori critici.`);
+    process.exitCode = 1;
+  } else {
+    console.log("Schema sincronizzato con successo.");
+  }
 } catch (error) {
   console.error("Errore sincronizzazione schema:", error);
   process.exitCode = 1;

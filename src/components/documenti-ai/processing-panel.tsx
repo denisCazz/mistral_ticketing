@@ -75,8 +75,17 @@ export default function ProcessingPanel() {
     const response = await fetch("/api/admin/documenti-ai", {
       cache: "no-store",
     });
-    if (!response.ok) throw new Error("Errore caricamento coda AI");
-    const data = (await response.json()) as Snapshot;
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const detail =
+        typeof payload.details === "string" && payload.details
+          ? ` — ${payload.details}`
+          : "";
+      throw new Error(
+        (payload.error ?? "Errore caricamento coda AI") + detail
+      );
+    }
+    const data = payload as Snapshot;
     setSnapshot(data);
     return data;
   }, []);
@@ -90,9 +99,13 @@ export default function ProcessingPanel() {
         if (cancelled) return;
         const active = data.jobs.PENDING + data.jobs.RUNNING > 0;
         timer = setTimeout(poll, active ? 3000 : 15_000);
-      } catch {
+      } catch (error) {
         if (!cancelled) {
-          toast.error("Errore caricamento coda AI");
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : "Errore caricamento coda AI"
+          );
           timer = setTimeout(poll, 15_000);
         }
       } finally {
@@ -128,7 +141,11 @@ export default function ProcessingPanel() {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(data.error ?? "Azione non riuscita");
+        const detail =
+          typeof data.details === "string" && data.details
+            ? ` — ${data.details}`
+            : "";
+        throw new Error((data.error ?? "Azione non riuscita") + detail);
       }
       setSnapshot(data.snapshot as Snapshot);
       toast.success(`Documenti interessati: ${data.affected ?? 0}`);

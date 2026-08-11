@@ -178,16 +178,16 @@ async function searchNative(params: {
         id,
         row_number() OVER (
           ORDER BY ts_rank_cd(
-            to_tsvector('italian', content),
-            websearch_to_tsquery('italian', ${params.query})
+            to_tsvector('simple', content),
+            websearch_to_tsquery('simple', ${params.query})
           ) DESC
         ) AS rank
       FROM eligible
-      WHERE to_tsvector('italian', content)
-        @@ websearch_to_tsquery('italian', ${params.query})
+      WHERE to_tsvector('simple', content)
+        @@ websearch_to_tsquery('simple', ${params.query})
       ORDER BY ts_rank_cd(
-        to_tsvector('italian', content),
-        websearch_to_tsquery('italian', ${params.query})
+        to_tsvector('simple', content),
+        websearch_to_tsquery('simple', ${params.query})
       ) DESC
       LIMIT ${candidateLimit}
     ),

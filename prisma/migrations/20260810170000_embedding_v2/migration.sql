@@ -49,7 +49,13 @@ WHERE ranked.id = chunk.id
   AND chunk."chunkIndex" IS NULL;
 
 ALTER TABLE "DocumentoChunk"
-  ALTER COLUMN "chunkIndex" SET DEFAULT 0,
+  ALTER COLUMN "chunkIndex" SET DEFAULT 0;
+
+UPDATE "DocumentoChunk"
+SET "chunkIndex" = 0
+WHERE "chunkIndex" IS NULL;
+
+ALTER TABLE "DocumentoChunk"
   ALTER COLUMN "chunkIndex" SET NOT NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS "DocumentoChunk_documentoId_embeddingVersion_chunkIndex_key"
@@ -60,13 +66,9 @@ CREATE INDEX IF NOT EXISTS "DocumentoChunk_embeddingVersion_idx"
   ON "DocumentoChunk"("embeddingVersion");
 DO $$ BEGIN
   CREATE INDEX IF NOT EXISTS "DocumentoChunk_fts_it_idx"
-    ON "DocumentoChunk" USING GIN (to_tsvector('italian', content));
+    ON "DocumentoChunk" USING GIN (to_tsvector('simple', content));
 EXCEPTION
-  WHEN undefined_object THEN
-    -- fallback se la configurazione 'italian' non è installata sul DB
-    CREATE INDEX IF NOT EXISTS "DocumentoChunk_fts_it_idx"
-      ON "DocumentoChunk" USING GIN (to_tsvector('simple', content));
-  WHEN duplicate_table THEN NULL;
+  WHEN OTHERS THEN NULL;
 END $$;
 
 CREATE TABLE IF NOT EXISTS "DocumentoEmbedding" (
