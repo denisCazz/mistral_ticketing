@@ -50,7 +50,11 @@ export NEXTAUTH_SECRET="$(openssl rand -base64 32)"
 docker compose up --build
 ```
 
-Il container esegue `prisma/sync-schema.mjs` all'avvio (DDL idempotente) e poi il server. Le variabili per R2/OpenAI/Resend/cron si passano via ambiente (`docker compose` le propaga da `.env`).
+All'avvio Compose esegue automaticamente il servizio one-shot `db-sync`
+(`prisma/sync-schema.mjs`: DDL + pgvector + embedding v2), poi parte
+`app` e `worker`. Non serve lanciare `npm run db:sync` a mano in Docker.
+Le variabili per R2/OpenAI/Resend/cron si passano via ambiente
+(`docker compose` le propaga da `.env`).
 
 ### Test e qualità
 
@@ -58,6 +62,43 @@ Il container esegue `prisma/sync-schema.mjs` all'avvio (DDL idempotente) e poi i
 npm test          # vitest (calcoli, parser scadenze, whitelist, tariffe, fonti RAG)
 npm run lint      # eslint
 ```
+
+### Embedding documenti v2
+
+La pipeline documentale usa chunk contestuali per pagina/sezione, embedding
+versionati e attivazione atomica. PostgreSQL `pgvector` + HNSW viene usato
+quando disponibile; in caso contrario la ricerca continua in modalità JSON
+degradata, visibile nella pagina `/admin/documenti-ai`.
+
+```bash
+# solo locale (senza Docker): sync manuale + worker
+npm run db:sync
+npm run documenti:worker
+```
+
+Con Docker lo sync e il `worker` partono da soli con `docker compose up`.
+In locale senza Compose il secondo comando deve restare attivo in un
+terminale separato. I nuovi documenti creano
+un job `FULL_PIPELINE`; l'azione admin **Reindicizza tutti in v2** crea job
+`EMBEDDING_ONLY` e non ripete OCR/estrazione strutturata. La rielaborazione
+completa richiede conferma esplicita.
+
+Benchmark prima/dopo:
+
+```bash
+npm run documenti:eval:gold
+npm run documenti:eval -- --gold=logs/retrieval-gold.json --label=baseline
+npm run documenti:eval -- --gold=logs/retrieval-gold.json --label=v2 --compare=logs/retrieval-baseline.json
+```
+
+Il gold set richiede almeno 20 query. V2 non deve peggiorare Recall@5 o MRR;
+l'obiettivo è almeno +10% relativo su Recall@5. Lasciare
+`DOCUMENT_EMBEDDING_CLEANUP_ENABLED=false` durante benchmark e osservazione;
+abilitarlo solo dopo il superamento del quality gate. Le generazioni inattive
+vengono allora eliminate dopo `DOCUMENT_EMBEDDING_RETENTION_DAYS` (default 14).
+
+La tab **Mappa 3D** mostra fino a 1.000 documenti: colore per categoria,
+dimensione per numero di chunk e collegamenti per similarità semantica.
 
 ## Ruoli
 

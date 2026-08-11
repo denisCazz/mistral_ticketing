@@ -1,4 +1,4 @@
-import "dotenv/config";
+﻿import "dotenv/config";
 
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -13,6 +13,7 @@ import {
 } from "../src/lib/document-whitelist";
 import { mimeFromExt } from "../src/lib/document-ingest";
 import { parseScadenzaFromText } from "../src/lib/scadenza-parser";
+import { DOCUMENT_EMBEDDING_PROFILE } from "../src/lib/document-embedding-profile";
 
 const execFileAsync = promisify(execFile);
 
@@ -335,6 +336,15 @@ async function importFile(
           statoIngestione: "PENDING",
           aiWhitelist,
           sourcePath: file.relativePath,
+          embeddingDesiredVersion: aiWhitelist
+            ? DOCUMENT_EMBEDDING_PROFILE.version
+            : null,
+          aiJobs: {
+            create: {
+              type: "FULL_PIPELINE",
+              targetVersion: DOCUMENT_EMBEDDING_PROFILE.version,
+            },
+          },
         },
       })
     );

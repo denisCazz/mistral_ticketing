@@ -1,6 +1,14 @@
 ﻿import { Pool } from "pg";
+import { readFile } from "node:fs/promises";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const embeddingV2Migration = await readFile(
+  new URL(
+    "./migrations/20260810170000_embedding_v2/migration.sql",
+    import.meta.url
+  ),
+  "utf8"
+);
 
 const statements = [
   // Drop legacy Pratica tables if present
@@ -82,6 +90,25 @@ const statements = [
   `ALTER TABLE "Documento" ADD COLUMN IF NOT EXISTS "extractionJson" JSONB;`,
   `ALTER TABLE "Documento" ADD COLUMN IF NOT EXISTS "extractionAt" TIMESTAMP(3);`,
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "mustChangePassword" BOOLEAN NOT NULL DEFAULT false`,
+  embeddingV2Migration,
+  `DO $$ BEGIN
+    CREATE EXTENSION IF NOT EXISTS vector;
+  EXCEPTION
+    WHEN insufficient_privilege OR undefined_file OR feature_not_supported THEN
+      RAISE NOTICE 'pgvector unavailable; JSON fallback remains active';
+  END $$;`,
+  `DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+      ALTER TABLE "DocumentoChunk"
+        ADD COLUMN IF NOT EXISTS "embeddingVector" vector(1536);
+      ALTER TABLE "DocumentoEmbedding"
+        ADD COLUMN IF NOT EXISTS "centroidVector" vector(1536);
+      CREATE INDEX IF NOT EXISTS "DocumentoChunk_embeddingVector_hnsw"
+        ON "DocumentoChunk" USING hnsw ("embeddingVector" vector_cosine_ops);
+      CREATE INDEX IF NOT EXISTS "DocumentoEmbedding_centroidVector_hnsw"
+        ON "DocumentoEmbedding" USING hnsw ("centroidVector" vector_cosine_ops);
+    END IF;
+  END $$;`,
 ];
 
 const client = await pool.connect();

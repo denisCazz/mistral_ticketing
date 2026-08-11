@@ -7,9 +7,9 @@ import {
   generateDocumentAnswer,
   buildAiAuditCost,
 } from "@/lib/openai";
-import { searchSimilarChunks } from "@/lib/rag";
+import { searchDocumentChunks } from "@/lib/document-retrieval";
 import { OPENAI_CHAT_MODEL } from "@/lib/config";
-import { canAccessDocumentiHr, documentiHrWhere } from "@/lib/access";
+import { canAccessDocumentiHr } from "@/lib/access";
 import { groupChunksByDocument } from "@/lib/document-answer-sources";
 
 const MIN_SIMILARITY = 0.35;
@@ -56,17 +56,19 @@ export async function POST(req: Request) {
     );
   }
 
-  const ranked = await searchSimilarChunks(
-    queryEmbedding,
-    16,
-    question,
-    documentiHrWhere(canAccessDocumentiHr(session))
-  );
+  const retrieval = await searchDocumentChunks({
+    embedding: queryEmbedding,
+    query: question,
+    limit: 16,
+    scope: { canAccessHr: canAccessDocumentiHr(session) },
+  });
+  const ranked = retrieval.chunks;
   const dynamicCutoff = ranked.length
     ? Math.max(MIN_SIMILARITY, ranked[0].relevance - 0.1)
     : MIN_SIMILARITY;
   const chunksPerDocument = new Map<string, number>();
   const chunks = ranked
+    .filter((c) => c.similarity >= MIN_SIMILARITY)
     .filter((c) => c.relevance >= dynamicCutoff)
     .filter((c) => {
       const count = chunksPerDocument.get(c.documentoId) ?? 0;
@@ -135,6 +137,7 @@ export async function POST(req: Request) {
             embeddingTokens,
             totalTokens: answerResult.totalTokens + embeddingTokens,
             estimatedCostUsd,
+            retrievalMode: retrieval.mode,
           },
         },
       },

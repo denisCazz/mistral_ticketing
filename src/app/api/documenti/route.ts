@@ -6,6 +6,7 @@ import { isAiWhitelistCandidate } from "@/lib/document-whitelist";
 import { headR2Object, isR2Configured } from "@/lib/r2";
 import type { EntityType, StatoValidita } from "@prisma/client";
 import { parseScadenzaFromText } from "@/lib/scadenza-parser";
+import { DOCUMENT_EMBEDDING_PROFILE } from "@/lib/document-embedding-profile";
 
 function categoriaSearchTerm(categoria: string): string {
   const aliases: Record<string, string> = {
@@ -233,6 +234,15 @@ export async function POST(req: Request) {
       statoValidita,
       statoIngestione: "PENDING",
       aiWhitelist: whitelist,
+      embeddingDesiredVersion: whitelist
+        ? DOCUMENT_EMBEDDING_PROFILE.version
+        : null,
+      aiJobs: {
+        create: {
+          type: "FULL_PIPELINE",
+          targetVersion: DOCUMENT_EMBEDDING_PROFILE.version,
+        },
+      },
     },
     include: {
       dipendente: { select: { id: true, nome: true, cognome: true } },

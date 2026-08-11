@@ -1,6 +1,19 @@
 ﻿services:
+  db-sync:
+    build:
+      context: .
+      target: db-sync
+    environment:
+      DATABASE_URL: "postgresql://mistral:mistral123@db:5432/mistral_impianti?schema=public"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
   app:
-    build: .
+    build:
+      context: .
+      target: runner
     ports:
       - "3000:3000"
     environment:
@@ -20,14 +33,50 @@
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       OPENAI_EMBEDDING_MODEL: "${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}"
       OPENAI_CHAT_MODEL: "${OPENAI_CHAT_MODEL:-gpt-4o-mini}"
+      DOCUMENT_EMBEDDING_VERSION: "${DOCUMENT_EMBEDDING_VERSION:-document-v2}"
+      DOCUMENT_AI_WORKER_POLL_MS: "${DOCUMENT_AI_WORKER_POLL_MS:-2000}"
+      DOCUMENT_EMBEDDING_RETENTION_DAYS: "${DOCUMENT_EMBEDDING_RETENTION_DAYS:-14}"
+      DOCUMENT_EMBEDDING_CLEANUP_ENABLED: "${DOCUMENT_EMBEDDING_CLEANUP_ENABLED:-false}"
+      DOCUMENT_SIMILARITY_MIN: "${DOCUMENT_SIMILARITY_MIN:-0.72}"
+      DOCUMENTI_SOURCE_PATH: "${DOCUMENTI_SOURCE_PATH:-}"
       CRON_SECRET: "${CRON_SECRET:-}"
     depends_on:
       db:
         condition: service_healthy
+      db-sync:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      target: worker
+    environment:
+      DATABASE_URL: "postgresql://mistral:mistral123@db:5432/mistral_impianti?schema=public"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_EMBEDDING_MODEL: "${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}"
+      OPENAI_CHAT_MODEL: "${OPENAI_CHAT_MODEL:-gpt-4o-mini}"
+      OPENAI_VISION_MODEL: "${OPENAI_VISION_MODEL:-gpt-4o-mini}"
+      R2_ACCOUNT_ID: "${R2_ACCOUNT_ID:-}"
+      R2_ACCESS_KEY_ID: "${R2_ACCESS_KEY_ID:-}"
+      R2_SECRET_ACCESS_KEY: "${R2_SECRET_ACCESS_KEY:-}"
+      R2_BUCKET: "${R2_BUCKET:-}"
+      R2_ENDPOINT: "${R2_ENDPOINT:-}"
+      DOCUMENTI_SOURCE_PATH: "${DOCUMENTI_SOURCE_PATH:-}"
+      DOCUMENT_EMBEDDING_VERSION: "${DOCUMENT_EMBEDDING_VERSION:-document-v2}"
+      DOCUMENT_AI_WORKER_POLL_MS: "${DOCUMENT_AI_WORKER_POLL_MS:-2000}"
+      DOCUMENT_EMBEDDING_RETENTION_DAYS: "${DOCUMENT_EMBEDDING_RETENTION_DAYS:-14}"
+      DOCUMENT_EMBEDDING_CLEANUP_ENABLED: "${DOCUMENT_EMBEDDING_CLEANUP_ENABLED:-false}"
+      DOCUMENT_SIMILARITY_MIN: "${DOCUMENT_SIMILARITY_MIN:-0.72}"
+    depends_on:
+      db:
+        condition: service_healthy
+      db-sync:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: mistral
       POSTGRES_PASSWORD: mistral123

@@ -16,6 +16,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx prisma generate
+      - run: npx prisma validate
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
@@ -26,3 +27,34 @@ jobs:
           NEXTAUTH_URL: http://localhost:3000
           RAPPORTINI_ENABLED: "false"
           NEXT_PUBLIC_RAPPORTINI_ENABLED: "false"
+
+  vector-db:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: mistral
+          POSTGRES_PASSWORD: mistral
+          POSTGRES_DB: mistral_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mistral -d mistral_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://mistral:mistral@localhost:5432/mistral_test?schema=public
+      TEST_DATABASE_URL: postgresql://mistral:mistral@localhost:5432/mistral_test?schema=public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx prisma db push --skip-generate
+      - run: node prisma/sync-schema.mjs
+      - run: npm run documenti:verify-db

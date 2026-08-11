@@ -40,6 +40,27 @@ enum StatoIngestione {
   DA_REVISIONARE
 }
 
+enum EmbeddingStatus {
+  PENDING
+  INDEXING
+  READY
+  FAILED
+}
+
+enum DocumentoAiJobType {
+  FULL_PIPELINE
+  EMBEDDING_ONLY
+  FULL_REPROCESS
+}
+
+enum DocumentoAiJobStatus {
+  PENDING
+  RUNNING
+  PAUSED
+  COMPLETED
+  FAILED
+}
+
 enum FonteScadenza {
   FILENAME
   OCR
@@ -81,7 +102,7 @@ model User {
   telefono           String?
   createdAt          DateTime @default(now())
 
-  preventiviComeOperatore Preventivo[]        @relation("PreventivoOperatore")
+  preventiviComeOperatore Preventivo[]         @relation("PreventivoOperatore")
   cambiamentiPreventivo   PreventivoStoria[]
   preventivoVersioni      PreventivoVersione[]
   preventivoExports       PreventivoExport[]
@@ -126,21 +147,21 @@ model Cliente {
 }
 
 model Preventivo {
-  id              String          @id @default(cuid())
-  numeroPreventivo String         @unique
-  clienteId       String
-  operatoreId     String
-  stato           StatoPreventivo @default(BOZZA)
-  introduzione    String?
-  condizioni      String?
-  validoFino      DateTime?       @db.Date
-  versione        Int             @default(1)
-  noteInterne     String?
-  totaleImponibile Decimal?       @db.Decimal(12, 2)
-  totaleIva        Decimal?       @db.Decimal(12, 2)
-  totaleFinale     Decimal?       @db.Decimal(12, 2)
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  id               String          @id @default(cuid())
+  numeroPreventivo String          @unique
+  clienteId        String
+  operatoreId      String
+  stato            StatoPreventivo @default(BOZZA)
+  introduzione     String?
+  condizioni       String?
+  validoFino       DateTime?       @db.Date
+  versione         Int             @default(1)
+  noteInterne      String?
+  totaleImponibile Decimal?        @db.Decimal(12, 2)
+  totaleIva        Decimal?        @db.Decimal(12, 2)
+  totaleFinale     Decimal?        @db.Decimal(12, 2)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   cliente   Cliente              @relation(fields: [clienteId], references: [id])
   operatore User                 @relation("PreventivoOperatore", fields: [operatoreId], references: [id])
@@ -183,7 +204,7 @@ model PreventivoVersione {
   motivo         String?
 
   preventivo Preventivo         @relation(fields: [preventivoId], references: [id], onDelete: Cascade)
-  createdBy  User                 @relation(fields: [createdById], references: [id])
+  createdBy  User               @relation(fields: [createdById], references: [id])
   exports    PreventivoExport[]
 
   @@unique([preventivoId, numeroVersione])
@@ -191,13 +212,13 @@ model PreventivoVersione {
 }
 
 model PreventivoStoria {
-  id          String           @id @default(cuid())
+  id           String           @id @default(cuid())
   preventivoId String
-  statoDa     StatoPreventivo?
-  statoA      StatoPreventivo
-  changedById String
-  changedAt   DateTime         @default(now())
-  note        String?
+  statoDa      StatoPreventivo?
+  statoA       StatoPreventivo
+  changedById  String
+  changedAt    DateTime         @default(now())
+  note         String?
 
   preventivo Preventivo @relation(fields: [preventivoId], references: [id], onDelete: Cascade)
   changedBy  User       @relation(fields: [changedById], references: [id])
@@ -242,11 +263,11 @@ model Dipendente {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  user       User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
-  categoria  CategoriaDipendente @relation(fields: [categoriaId], references: [id])
-  documenti  Documento[]
-  scadenze   Scadenza[]
-  presenze   PresenzaGiorno[]
+  user           User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  categoria      CategoriaDipendente @relation(fields: [categoriaId], references: [id])
+  documenti      Documento[]
+  scadenze       Scadenza[]
+  presenze       PresenzaGiorno[]
   costiAccessori CostoAccessorio[]
 
   @@index([cognome, nome])
@@ -254,17 +275,17 @@ model Dipendente {
 }
 
 model CategoriaDipendente {
-  id                    String   @id @default(cuid())
-  nome                  String   @unique
-  sistema               Boolean  @default(false)
-  costoGiornata         Decimal  @default(0) @db.Decimal(12, 2)
-  indennitaTrasferta    Decimal  @default(0) @db.Decimal(12, 2)
-  costoMutua            Decimal  @default(0) @db.Decimal(12, 2)
-  costoPermesso         Decimal  @default(0) @db.Decimal(12, 2)
-  costoFerie            Decimal  @default(0) @db.Decimal(12, 2)
-  costoFestivo          Decimal  @default(0) @db.Decimal(12, 2)
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  nome               String   @unique
+  sistema            Boolean  @default(false)
+  costoGiornata      Decimal  @default(0) @db.Decimal(12, 2)
+  indennitaTrasferta Decimal  @default(0) @db.Decimal(12, 2)
+  costoMutua         Decimal  @default(0) @db.Decimal(12, 2)
+  costoPermesso      Decimal  @default(0) @db.Decimal(12, 2)
+  costoFerie         Decimal  @default(0) @db.Decimal(12, 2)
+  costoFestivo       Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   dipendenti Dipendente[]
 
@@ -316,43 +337,53 @@ model Automezzo {
 }
 
 model Documento {
-  id                   String          @id @default(cuid())
-  storageKey           String          @unique
-  sha256               String          @unique
-  mimeType             String
-  sizeBytes            Int
-  titoloOriginale      String
-  categoria            String
-  sottocategoria       String?
-  entityType           EntityType
-  dipendenteId         String?
-  automezzoId          String?
-  dataDocumento        DateTime?       @db.Date
-  dataScadenza         DateTime?       @db.Date
-  scadenzaSource       FonteScadenza?
-  scadenzaConfidence   Float?
-  scadenzaRaw          String?
+  id                      String          @id @default(cuid())
+  storageKey              String          @unique
+  sha256                  String          @unique
+  mimeType                String
+  sizeBytes               Int
+  titoloOriginale         String
+  categoria               String
+  sottocategoria          String?
+  entityType              EntityType
+  dipendenteId            String?
+  automezzoId             String?
+  dataDocumento           DateTime?       @db.Date
+  dataScadenza            DateTime?       @db.Date
+  scadenzaSource          FonteScadenza?
+  scadenzaConfidence      Float?
+  scadenzaRaw             String?
   /// True se il documento non richiede una data di scadenza
-  nonServeScadenza     Boolean         @default(false)
-  statoValidita        StatoValidita   @default(VALIDO)
-  statoIngestione      StatoIngestione @default(PENDING)
-  aiWhitelist          Boolean         @default(false)
-  extractedText        String?
+  nonServeScadenza        Boolean         @default(false)
+  statoValidita           StatoValidita   @default(VALIDO)
+  statoIngestione         StatoIngestione @default(PENDING)
+  aiWhitelist             Boolean         @default(false)
+  extractedText           String?
   /// Payload estrazione strutturata (campi, evidence, confidence, match)
-  extractionJson       Json?
-  extractionAt         DateTime?
-  sourcePath           String?
-  canonicalDocumentoId String?
-  createdAt            DateTime        @default(now())
-  updatedAt            DateTime        @updatedAt
+  extractionJson          Json?
+  extractionAt            DateTime?
+  sourcePath              String?
+  canonicalDocumentoId    String?
+  embeddingDesiredVersion String?
+  embeddingActiveProfile  String?
+  embeddingActiveVersion  String?
+  embeddingStatus         EmbeddingStatus @default(PENDING)
+  embeddingIndexedAt      DateTime?
+  embeddingLastError      String?
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
 
-  dipendente         Dipendente?       @relation(fields: [dipendenteId], references: [id], onDelete: SetNull)
-  automezzo          Automezzo?        @relation(fields: [automezzoId], references: [id], onDelete: SetNull)
-  canonical          Documento?        @relation("DocumentoDuplicati", fields: [canonicalDocumentoId], references: [id], onDelete: SetNull)
-  duplicati          Documento[]       @relation("DocumentoDuplicati")
-  testi              DocumentoTesto[]
-  chunks             DocumentoChunk[]
-  scadenze           Scadenza[]
+  dipendente           Dipendente?           @relation(fields: [dipendenteId], references: [id], onDelete: SetNull)
+  automezzo            Automezzo?            @relation(fields: [automezzoId], references: [id], onDelete: SetNull)
+  canonical            Documento?            @relation("DocumentoDuplicati", fields: [canonicalDocumentoId], references: [id], onDelete: SetNull)
+  duplicati            Documento[]           @relation("DocumentoDuplicati")
+  testi                DocumentoTesto[]
+  chunks               DocumentoChunk[]
+  scadenze             Scadenza[]
+  embeddingGenerations DocumentoEmbedding[]
+  similaritySources    DocumentoSimilarity[] @relation("SimilaritySource")
+  similarityTargets    DocumentoSimilarity[] @relation("SimilarityTarget")
+  aiJobs               DocumentoAiJob[]
 
   @@index([categoria])
   @@index([entityType])
@@ -365,23 +396,10 @@ model Documento {
 }
 
 model DocumentoTesto {
-  id           String   @id @default(cuid())
-  documentoId  String
-  content      String
-  pageNumber   Int?
-  createdAt    DateTime @default(now())
-
-  documento Documento @relation(fields: [documentoId], references: [id], onDelete: Cascade)
-
-  @@index([documentoId])
-}
-
-model DocumentoChunk {
   id          String   @id @default(cuid())
   documentoId String
   content     String
-  embedding   Json?
-  metadata    Json?
+  pageNumber  Int?
   createdAt   DateTime @default(now())
 
   documento Documento @relation(fields: [documentoId], references: [id], onDelete: Cascade)
@@ -389,28 +407,111 @@ model DocumentoChunk {
   @@index([documentoId])
 }
 
+model DocumentoChunk {
+  id               String   @id @default(cuid())
+  documentoId      String
+  content          String
+  embedding        Json?
+  metadata         Json?
+  embeddingProfile String   @default("document-v1")
+  embeddingVersion String   @default("document-v1")
+  chunkIndex       Int      @default(0)
+  contentHash      String   @default("")
+  tokenCount       Int      @default(0)
+  pageFrom         Int?
+  pageTo           Int?
+  sectionTitle     String?
+  createdAt        DateTime @default(now())
+
+  documento Documento @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+
+  @@unique([documentoId, embeddingVersion, chunkIndex])
+  @@index([documentoId])
+  @@index([embeddingProfile])
+  @@index([embeddingVersion])
+}
+
+model DocumentoEmbedding {
+  id               String   @id @default(cuid())
+  documentoId      String
+  embeddingProfile String
+  embeddingVersion String
+  centroid         Json
+  model            String
+  dimensions       Int
+  chunkCount       Int
+  createdAt        DateTime @default(now())
+
+  documento Documento @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+
+  @@unique([documentoId, embeddingVersion])
+  @@index([embeddingProfile])
+}
+
+model DocumentoSimilarity {
+  id                String   @id @default(cuid())
+  sourceDocumentoId String
+  targetDocumentoId String
+  sourceVersion     String
+  targetVersion     String
+  score             Float
+  updatedAt         DateTime @updatedAt
+
+  source Documento @relation("SimilaritySource", fields: [sourceDocumentoId], references: [id], onDelete: Cascade)
+  target Documento @relation("SimilarityTarget", fields: [targetDocumentoId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceDocumentoId, targetDocumentoId])
+  @@index([sourceDocumentoId, score])
+  @@index([targetDocumentoId])
+}
+
+model DocumentoAiJob {
+  id             String               @id @default(cuid())
+  documentoId    String
+  type           DocumentoAiJobType
+  targetVersion  String
+  status         DocumentoAiJobStatus @default(PENDING)
+  attempts       Int                  @default(0)
+  maxAttempts    Int                  @default(3)
+  nextRunAt      DateTime             @default(now())
+  leaseOwner     String?
+  leaseExpiresAt DateTime?
+  lastError      String?
+  tokenCount     Int                  @default(0)
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  documento Documento @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+
+  @@unique([documentoId, type, targetVersion])
+  @@index([status, nextRunAt])
+  @@index([leaseExpiresAt])
+}
+
 model Scadenza {
-  id             String         @id @default(cuid())
+  id             String        @id @default(cuid())
   documentoId    String?
   dipendenteId   String?
   automezzoId    String?
   preventivoId   String?
   titolo         String
   descrizione    String?
-  dataScadenza   DateTime       @db.Date
-  confermata     Boolean        @default(false)
+  dataScadenza   DateTime      @db.Date
+  confermata     Boolean       @default(false)
   fonte          FonteScadenza
   confidence     Float?
   rawValue       String?
   responsabileId String?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
-  documento    Documento?    @relation(fields: [documentoId], references: [id], onDelete: SetNull)
-  dipendente   Dipendente?   @relation(fields: [dipendenteId], references: [id], onDelete: SetNull)
-  automezzo    Automezzo?    @relation(fields: [automezzoId], references: [id], onDelete: SetNull)
-  preventivo   Preventivo?   @relation(fields: [preventivoId], references: [id], onDelete: SetNull)
-  responsabile User?         @relation(fields: [responsabileId], references: [id], onDelete: SetNull)
+  documento    Documento?      @relation(fields: [documentoId], references: [id], onDelete: SetNull)
+  dipendente   Dipendente?     @relation(fields: [dipendenteId], references: [id], onDelete: SetNull)
+  automezzo    Automezzo?      @relation(fields: [automezzoId], references: [id], onDelete: SetNull)
+  preventivo   Preventivo?     @relation(fields: [preventivoId], references: [id], onDelete: SetNull)
+  responsabile User?           @relation(fields: [responsabileId], references: [id], onDelete: SetNull)
   alerts       AlertScadenza[]
 
   @@index([dataScadenza])
@@ -419,13 +520,13 @@ model Scadenza {
 }
 
 model AlertScadenza {
-  id           String   @id @default(cuid())
-  scadenzaId   String
-  giorniPrima  Int
-  inviatoAt    DateTime @default(now())
-  destinatari  String[]
-  success      Boolean  @default(true)
-  error        String?
+  id          String   @id @default(cuid())
+  scadenzaId  String
+  giorniPrima Int
+  inviatoAt   DateTime @default(now())
+  destinatari String[]
+  success     Boolean  @default(true)
+  error       String?
 
   scadenza Scadenza @relation(fields: [scadenzaId], references: [id], onDelete: Cascade)
 
@@ -434,19 +535,19 @@ model AlertScadenza {
 }
 
 model AiGenerationAudit {
-  id                String   @id @default(cuid())
-  preventivoId      String?
-  userId            String
-  prompt            String
-  model             String
-  sources           Json
-  outputJson        Json
-  promptTokens      Int?
-  completionTokens  Int?
-  embeddingTokens   Int?
-  totalTokens       Int?
-  estimatedCostUsd  Decimal? @db.Decimal(12, 6)
-  createdAt         DateTime @default(now())
+  id               String   @id @default(cuid())
+  preventivoId     String?
+  userId           String
+  prompt           String
+  model            String
+  sources          Json
+  outputJson       Json
+  promptTokens     Int?
+  completionTokens Int?
+  embeddingTokens  Int?
+  totalTokens      Int?
+  estimatedCostUsd Decimal? @db.Decimal(12, 6)
+  createdAt        DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id])
 

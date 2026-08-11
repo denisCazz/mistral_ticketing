@@ -2,6 +2,7 @@
 import {
   OPENAI_API_KEY,
   OPENAI_CHAT_MODEL,
+  OPENAI_EMBEDDING_DIMENSIONS,
   OPENAI_EMBEDDING_MODEL,
   OPENAI_VISION_MODEL,
 } from "@/lib/config";
@@ -39,11 +40,15 @@ export interface EmbedResult {
   tokens: number;
 }
 
-export async function embedTexts(texts: string[]): Promise<EmbedResult> {
+export async function embedTexts(
+  texts: string[],
+  options: { model?: string; dimensions?: number } = {}
+): Promise<EmbedResult> {
   const client = getOpenAi();
   const res = await client.embeddings.create({
-    model: OPENAI_EMBEDDING_MODEL,
+    model: options.model ?? OPENAI_EMBEDDING_MODEL,
     input: texts,
+    dimensions: options.dimensions ?? OPENAI_EMBEDDING_DIMENSIONS,
   });
   return {
     embeddings: res.data.map((d) => d.embedding),

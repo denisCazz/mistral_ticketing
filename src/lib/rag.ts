@@ -1,5 +1,5 @@
 ﻿import { prisma } from "@/lib/db";
-import { OPENAI_EMBEDDING_MODEL } from "@/lib/config";
+import { indexDocumento } from "@/lib/document-indexer";
 
 function cosineSimilarity(a: number[], b: number[]): number {
   let dot = 0;
@@ -193,43 +193,8 @@ export async function upsertChunkEmbedding(
 }
 
 export async function indexDocumentoChunks(documentoId: string): Promise<number> {
-  const doc = await prisma.documento.findUnique({
-    where: { id: documentoId },
-    include: { testi: true },
-  });
-  if (!doc || !doc.aiWhitelist) return 0;
-
-  const fullText =
-    doc.extractedText ?? doc.testi.map((t) => t.content).join("\n\n");
-  if (!fullText.trim()) return 0;
-
-  await prisma.documentoChunk.deleteMany({ where: { documentoId } });
-
-  const chunks = chunkText(fullText, 3200, 400);
-  const { embedTexts } = await import("@/lib/openai");
-  const { embeddings } = await embedTexts(chunks);
-
-  for (let i = 0; i < chunks.length; i++) {
-    await prisma.documentoChunk.create({
-      data: {
-        documentoId,
-        content: chunks[i],
-        embedding: embeddings[i],
-        metadata: {
-          index: i,
-          model: OPENAI_EMBEDDING_MODEL,
-          dimensions: embeddings[i].length,
-        },
-      },
-    });
-  }
-
-  await prisma.documento.update({
-    where: { id: documentoId },
-    data: { statoIngestione: "READY" },
-  });
-
-  return chunks.length;
+  const result = await indexDocumento(documentoId);
+  return result.chunkCount;
 }
 
 export function chunkText(

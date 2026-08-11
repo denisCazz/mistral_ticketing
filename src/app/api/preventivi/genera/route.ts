@@ -7,9 +7,9 @@ import {
   generatePreventivoDraft,
   buildAiAuditCost,
 } from "@/lib/openai";
-import { searchSimilarChunks } from "@/lib/rag";
+import { searchDocumentChunks } from "@/lib/document-retrieval";
 import { OPENAI_CHAT_MODEL } from "@/lib/config";
-import { canAccessDocumentiHr, documentiHrWhere } from "@/lib/access";
+import { canAccessDocumentiHr } from "@/lib/access";
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -60,12 +60,13 @@ export async function POST(req: Request) {
     );
   }
 
-  const chunks = await searchSimilarChunks(
-    queryEmbedding,
-    6,
-    prompt,
-    documentiHrWhere(canAccessDocumentiHr(session))
-  );
+  const retrieval = await searchDocumentChunks({
+    embedding: queryEmbedding,
+    query: prompt,
+    limit: 6,
+    scope: { canAccessHr: canAccessDocumentiHr(session) },
+  });
+  const chunks = retrieval.chunks;
 
   let draft;
   try {
