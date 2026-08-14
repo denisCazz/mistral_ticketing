@@ -5,7 +5,7 @@ import { DashboardView } from "./dashboard-view";
 
 export default async function DashboardPage() {
   const session = await auth();
-  if (!session) redirect("/login");
+  if (!session?.user?.id) redirect("/login");
 
   const data = await getDashboardData(session);
   const firstName = session.user?.name?.split(" ")[0] ?? "Operatore";

@@ -9,6 +9,7 @@
       DATABASE_URL: "postgresql://mistral:mistral123@db:5432/mistral_impianti?schema=public"
       NEXTAUTH_URL: "${NEXTAUTH_URL:-http://localhost:3000}"
       NEXTAUTH_SECRET: "${NEXTAUTH_SECRET}"
+      AUTH_SECRET: "${AUTH_SECRET:-${NEXTAUTH_SECRET}}"
       RAPPORTINI_ENABLED: "${RAPPORTINI_ENABLED:-false}"
       NEXT_PUBLIC_RAPPORTINI_ENABLED: "${NEXT_PUBLIC_RAPPORTINI_ENABLED:-false}"
       SEED_ADMIN_PASSWORD: "${SEED_ADMIN_PASSWORD:-}"

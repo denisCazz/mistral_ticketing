@@ -1,5 +1,6 @@
 ﻿import { describe, expect, it } from "vitest";
 import {
+  embeddingOnlyNeedsPipeline,
   nextJobStateAfterFailure,
   shouldRequeueExpiredLease,
 } from "@/lib/document-ai-jobs";
@@ -27,6 +28,13 @@ describe("document AI jobs", () => {
       error: "still failing",
     });
     expect(failed.status).toBe("FAILED");
+  });
+
+  it("EMBEDDING_ONLY senza testo deve passare dalla pipeline OCR", () => {
+    expect(embeddingOnlyNeedsPipeline(null)).toBe(true);
+    expect(embeddingOnlyNeedsPipeline("")).toBe(true);
+    expect(embeddingOnlyNeedsPipeline("   ")).toBe(true);
+    expect(embeddingOnlyNeedsPipeline("Manuale estintori")).toBe(false);
   });
 
   it("recupera un lease RUNNING scaduto", () => {

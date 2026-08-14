@@ -2,6 +2,7 @@
 import {
   filterAuthorizedCandidates,
   normalizeFusedResults,
+  prismaDocumentSearchFilters,
 } from "@/lib/document-retrieval";
 
 describe("document retrieval", () => {
@@ -28,5 +29,25 @@ describe("document retrieval", () => {
     expect(rows[0].relevance).toBe(1);
     expect(rows[1].relevance).toBeCloseTo(2 / 3);
     expect(rows[0].similarity).toBe(0.82);
+  });
+
+  it("costruisce filtri prisma per targa e categoria", () => {
+    expect(
+      prismaDocumentSearchFilters({
+        automezzoId: "auto-1",
+        categorie: ["ASSICURAZIONI"],
+      })
+    ).toEqual({
+      automezzoId: "auto-1",
+      categoria: { in: ["ASSICURAZIONI"] },
+    });
+    expect(
+      prismaDocumentSearchFilters({
+        dipendenteId: "d1",
+        automezzoId: "a1",
+      })
+    ).toEqual({
+      OR: [{ dipendenteId: "d1" }, { automezzoId: "a1" }],
+    });
   });
 });

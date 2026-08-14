@@ -1,15 +1,9 @@
 ﻿import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { canAccessDocumentiHr, canAccessPreventivo } from "@/lib/access";
+import { canAccessPreventivo } from "@/lib/access";
 import { prisma } from "@/lib/db";
-import {
-  isOpenAiConfigured,
-  embedText,
-  generatePreventivoDraft,
-  buildAiAuditCost,
-} from "@/lib/openai";
-import { searchDocumentChunks } from "@/lib/document-retrieval";
-import { OPENAI_CHAT_MODEL } from "@/lib/config";
+import { isOpenAiConfigured } from "@/lib/openai";
+import { runPreventivoAiGeneration } from "@/lib/preventivo-ai-run";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -43,101 +37,19 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  let queryEmbedding: number[];
-  let embeddingTokens = 0;
   try {
-    const embedded = await embedText(prompt);
-    queryEmbedding = embedded.embedding;
-    embeddingTokens = embedded.tokens;
-  } catch (err) {
-    console.error("embedText failed:", err);
-    return NextResponse.json(
-      { error: "Errore embedding OpenAI. Riprova tra poco." },
-      { status: 502 }
-    );
-  }
-
-  const retrieval = await searchDocumentChunks({
-    embedding: queryEmbedding,
-    query: prompt,
-    limit: 6,
-    scope: { canAccessHr: canAccessDocumentiHr(session) },
-  });
-  const chunks = retrieval.chunks;
-
-  const clienteInfo = [
-    preventivo.cliente.ragioneSociale,
-    preventivo.cliente.indirizzo,
-    preventivo.cliente.citta,
-    preventivo.cliente.email,
-    preventivo.cliente.cellulare,
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  let draft;
-  try {
-    draft = await generatePreventivoDraft({
+    const result = await runPreventivoAiGeneration({
+      session,
       prompt,
-      clienteInfo,
-      contextChunks: chunks.map((c) => ({
-        content: c.content,
-        documentoId: c.documentoId,
-        titolo: c.titolo,
-      })),
+      clienteId: preventivo.clienteId,
+      preventivoId: id,
     });
-  } catch (err) {
-    console.error("generatePreventivoDraft failed:", err);
+    return NextResponse.json(result);
+  } catch (error) {
+    console.error("generatePreventivoDraft failed:", error);
     return NextResponse.json(
       { error: "Errore generazione AI. Riprova tra poco." },
       { status: 502 }
     );
   }
-
-  const model = draft.model || OPENAI_CHAT_MODEL;
-  const estimatedCostUsd = buildAiAuditCost({
-    model,
-    promptTokens: draft.promptTokens,
-    completionTokens: draft.completionTokens,
-    embeddingTokens,
-  });
-  const sources = chunks.map((c) => ({
-    documentoId: c.documentoId,
-    titolo: c.titolo,
-    similarity: c.similarity,
-  }));
-
-  void prisma.aiGenerationAudit
-    .create({
-      data: {
-        preventivoId: id,
-        userId: session.user!.id!,
-        prompt,
-        model,
-        sources,
-        outputJson: {
-          ...draft.output,
-          _usage: {
-            promptTokens: draft.promptTokens,
-            completionTokens: draft.completionTokens,
-            embeddingTokens,
-            totalTokens: draft.totalTokens + embeddingTokens,
-            estimatedCostUsd,
-          },
-        },
-      },
-    })
-    .catch((err) => {
-      console.error("AiGenerationAudit create failed (bozza già restituita):", err);
-    });
-
-  return NextResponse.json({
-    bozza: draft.output,
-    fonti: chunks.map((c) => ({
-      documentoId: c.documentoId,
-      titolo: c.titolo,
-      excerpt: c.content.slice(0, 300),
-      similarity: c.similarity,
-    })),
-  });
 }

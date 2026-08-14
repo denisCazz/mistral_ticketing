@@ -174,7 +174,11 @@ export function DashboardView({
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <KpiCard
-            href="/scadenze"
+            href={
+              data.scadenzeScadute > 0
+                ? "/scadenze?filtro=scadute"
+                : "/scadenze?filtro=urgenti"
+            }
             label="Urgenti ≤7gg"
             value={data.scadenzeUrgenti}
             hint={
@@ -339,7 +343,11 @@ export function DashboardView({
                 </CardDescription>
               </div>
               <Link
-                href="/scadenze"
+                href={
+                  data.scadenzeScadute > 0
+                    ? "/scadenze?filtro=scadute"
+                    : "/scadenze"
+                }
                 className="text-xs font-medium text-sky-700 hover:underline"
               >
                 Vedi tutte

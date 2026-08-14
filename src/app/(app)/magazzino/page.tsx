@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -76,6 +77,8 @@ export default function MagazzinoPage() {
 function MagazzinoContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === "ADMIN";
   const [articoli, setArticoli] = useState<Articolo[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -173,16 +176,18 @@ function MagazzinoContent() {
             <ScanLine className="h-4 w-4 mr-2" />
             Scansiona
           </Link>
-          <Button
-            className="bg-orange-500 hover:bg-orange-600"
-            onClick={() => {
-              setForm(EMPTY);
-              setDialogOpen(true);
-            }}
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Nuovo articolo
-          </Button>
+          {isAdmin && (
+            <Button
+              className="bg-orange-500 hover:bg-orange-600"
+              onClick={() => {
+                setForm(EMPTY);
+                setDialogOpen(true);
+              }}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Nuovo articolo
+            </Button>
+          )}
         </div>
       </div>
 

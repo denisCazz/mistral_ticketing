@@ -8,7 +8,7 @@ import { toNum } from "@/lib/magazzino";
 export async function getDashboardData(session: Session) {
   const preventivoWhere = preventivoWhereForSession(session);
   const isOperatore = session.user?.role === "OPERATORE";
-  const userId = session.user!.id!;
+  const userId = session.user?.id;
 
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -38,7 +38,7 @@ export async function getDashboardData(session: Session) {
 
   const scadenzaBase: Record<string, unknown> = { confermata: true };
   if (isOperatore) {
-    scadenzaBase.responsabileId = userId;
+    scadenzaBase.responsabileId = userId ?? "__none__";
   }
 
   const [

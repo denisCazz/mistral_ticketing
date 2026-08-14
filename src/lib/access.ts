@@ -54,8 +54,36 @@ export function canAccessPreventivo(
   return false;
 }
 
-export function canAccessDocumentiHr(session: Session | null): boolean {
+export function isAdmin(session: Session | null): boolean {
   return session?.user?.role === "ADMIN";
+}
+
+export function canAccessDocumentiHr(session: Session | null): boolean {
+  return isAdmin(session);
+}
+
+export function canManageMagazzino(session: Session | null): boolean {
+  return isAdmin(session);
+}
+
+export function canRettificaMagazzino(session: Session | null): boolean {
+  return isAdmin(session);
+}
+
+export function canAccessScadenza(
+  session: Session | null,
+  scadenza: { responsabileId: string | null }
+): boolean {
+  if (!session?.user?.id || !session.user.role) return false;
+  if (isAdmin(session)) return true;
+  if (session.user.role === "OPERATORE") {
+    return scadenza.responsabileId === session.user.id;
+  }
+  return false;
+}
+
+export function canAssignScadenzaResponsabile(session: Session | null): boolean {
+  return isAdmin(session);
 }
 
 /** Categorie riservate HR (allineate a lista / dettaglio / file / RAG). */

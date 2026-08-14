@@ -13,6 +13,7 @@ const loginSchema = z.object({
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
+  secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
   pages: {
     signIn: "/login",
   },
@@ -23,12 +24,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.id = user.id;
+        token.id = user.id ?? token.sub;
         token.role = (user as { role?: string }).role;
         token.mustChangePassword = Boolean(
           (user as { mustChangePassword?: boolean }).mustChangePassword
         );
         token.refreshedAt = Date.now();
+      } else if (!token.id && token.sub) {
+        token.id = token.sub;
       }
 
       // Aggiorna ruolo dal DB al massimo ogni 60s: evita query
@@ -51,11 +54,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return token;
     },
     async session({ session, token }) {
-      if (token?.id) {
-        session.user.id = token.id as string;
-        session.user.role = token.role as string;
-        session.user.mustChangePassword = Boolean(token.mustChangePassword);
-      }
+      const id = (token?.id ?? token?.sub) as string | undefined;
+      if (!id) return session;
+      session.user = {
+        ...(session.user ?? { name: null, email: null, image: null }),
+        id,
+        role: token.role as string | undefined,
+        mustChangePassword: Boolean(token.mustChangePassword),
+      };
       return session;
     },
   },

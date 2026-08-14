@@ -22,8 +22,8 @@ export default function DocumentiAiAdminPage() {
           Elaborazione AI documenti
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Coda persistente e embedding RAG v2. Esplora relazioni semantiche
-          nella mappa dei documenti.
+          Coda persistente e embedding RAG v2. I job partono solo se è
+          attivo <code>npm run documenti:worker</code>.
         </p>
       </div>
 

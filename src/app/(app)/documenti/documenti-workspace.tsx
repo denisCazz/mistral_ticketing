@@ -17,6 +17,7 @@ import {
   Plus,
   Search,
   ShieldCheck,
+  Trash2,
   Upload,
   UserRound,
   Users,
@@ -108,6 +109,9 @@ function formatSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
+
+const checkboxClassName =
+  "h-4 w-4 shrink-0 rounded border-gray-300 text-sky-700 accent-sky-700";
 
 function statusStyle(status: string): string {
   if (status === "VALIDO") return "bg-emerald-50 text-emerald-700 ring-emerald-600/20";
@@ -871,6 +875,13 @@ export default function DocumentiWorkspace() {
   const [loading, setLoading] = useState(false);
   const [treeLoading, setTreeLoading] = useState(true);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{
+    ids: string[];
+    label: string;
+  } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const selectAllRef = useRef<HTMLInputElement>(null);
   const requestId = useRef(0);
 
   const knownCategories = useMemo(() => collectCategoriesFromTree(tree), [tree]);
@@ -1083,6 +1094,78 @@ export default function DocumentiWorkspace() {
   function refresh() {
     invalidateDocumentiCache();
     setRefreshKey((k) => k + 1);
+  }
+
+  const selectedCount = selectedIds.size;
+  const allVisibleSelected =
+    documents.length > 0 && documents.every((doc) => selectedIds.has(doc.id));
+  const someVisibleSelected = documents.some((doc) => selectedIds.has(doc.id));
+
+  useEffect(() => {
+    const visible = new Set(documents.map((doc) => doc.id));
+    setSelectedIds((current) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of current) {
+        if (visible.has(id)) next.add(id);
+        else changed = true;
+      }
+      if (!changed && next.size === current.size) return current;
+      return next;
+    });
+  }, [documents]);
+
+  useEffect(() => {
+    if (!selectAllRef.current) return;
+    selectAllRef.current.indeterminate = someVisibleSelected && !allVisibleSelected;
+  }, [someVisibleSelected, allVisibleSelected]);
+
+  function toggleSelected(id: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (allVisibleSelected) {
+      setSelectedIds(new Set());
+      return;
+    }
+    setSelectedIds(new Set(documents.map((doc) => doc.id)));
+  }
+
+  async function confirmDelete() {
+    if (!pendingDelete || pendingDelete.ids.length === 0) return;
+    setDeleting(true);
+    const ids = pendingDelete.ids;
+    const res =
+      ids.length === 1
+        ? await fetch(`/api/documenti/${ids[0]}`, { method: "DELETE" })
+        : await fetch("/api/documenti", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids }),
+          });
+    setDeleting(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      toast.error(
+        typeof data.error === "string" ? data.error : "Eliminazione non riuscita"
+      );
+      return;
+    }
+    const data = await res.json().catch(() => ({}));
+    const deleted =
+      typeof data.deleted === "number" ? data.deleted : ids.length;
+    toast.success(
+      deleted === 1 ? "Documento eliminato" : `${deleted} documenti eliminati`
+    );
+    setPendingDelete(null);
+    setSelectedIds(new Set());
+    refresh();
   }
 
   return (
@@ -1361,51 +1444,142 @@ export default function DocumentiWorkspace() {
             </div>
           ) : (
             <div className="divide-y">
+              <div className="flex flex-wrap items-center gap-2 px-3 py-2 sm:px-5">
+                <label className="flex items-center gap-2 text-sm text-gray-600">
+                  <input
+                    ref={selectAllRef}
+                    type="checkbox"
+                    className={checkboxClassName}
+                    checked={allVisibleSelected}
+                    onChange={toggleSelectAll}
+                    aria-label="Seleziona tutti i documenti visibili"
+                  />
+                  <span className="hidden sm:inline">Seleziona tutti</span>
+                </label>
+                {selectedCount > 0 && (
+                  <>
+                    <span className="text-sm font-medium text-gray-800">
+                      {selectedCount}{" "}
+                      {selectedCount === 1 ? "selezionato" : "selezionati"}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelectedIds(new Set())}
+                    >
+                      Annulla
+                    </Button>
+                    {isAdmin && (
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        onClick={() =>
+                          setPendingDelete({
+                            ids: [...selectedIds],
+                            label:
+                              selectedCount === 1
+                                ? `“${
+                                    documents.find((doc) => selectedIds.has(doc.id))
+                                      ?.titoloOriginale ?? "documento"
+                                  }”`
+                                : `${selectedCount} documenti`,
+                          })
+                        }
+                      >
+                        <Trash2 />
+                        Elimina
+                      </Button>
+                    )}
+                  </>
+                )}
+              </div>
               {documents.map((documento) => {
                 const href = returnQuery
                   ? `/documenti/${documento.id}?return=${encodeURIComponent(returnQuery)}`
                   : `/documenti/${documento.id}`;
+                const checked = selectedIds.has(documento.id);
                 return (
-                  <Link
+                  <div
                     key={documento.id}
-                    href={href}
-                    className="group flex items-center gap-3 px-4 py-3 transition hover:bg-gray-50 sm:px-5"
+                    className={cn(
+                      "group flex items-center gap-2 px-3 py-3 transition hover:bg-gray-50 sm:px-5 sm:gap-3",
+                      checked && "bg-sky-50 hover:bg-sky-50"
+                    )}
                   >
-                    <span className="rounded-lg bg-sky-50 p-2.5 text-sky-700">
-                      <FileText className="h-5 w-5" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium text-gray-900 group-hover:text-sky-800">
-                        {documento.titoloOriginale}
-                      </p>
-                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
-                        <span>{entityLabel(documento)}</span>
-                        <span>{documento.categoria}</span>
-                        <span>{formatSize(documento.sizeBytes)}</span>
-                        {documento.dataScadenza && (
-                          <span className="flex items-center gap-1">
-                            <CalendarClock className="h-3.5 w-3.5" />
-                            {new Date(documento.dataScadenza).toLocaleDateString("it-IT")}
-                          </span>
-                        )}
-                        {documento.aiWhitelist && (
-                          <span className="flex items-center gap-1 text-violet-600">
-                            <ShieldCheck className="h-3.5 w-3.5" />
-                            AI
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <span
-                      className={cn(
-                        "hidden rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset sm:inline-flex",
-                        statusStyle(documento.statoValidita)
-                      )}
+                    <input
+                      type="checkbox"
+                      className={checkboxClassName}
+                      checked={checked}
+                      onChange={() => toggleSelected(documento.id)}
+                      aria-label={`Seleziona ${documento.titoloOriginale}`}
+                    />
+                    <Link
+                      href={href}
+                      className="flex min-w-0 flex-1 items-center gap-3"
                     >
-                      {documento.statoValidita.replaceAll("_", " ")}
-                    </span>
-                    <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-sky-600" />
-                  </Link>
+                      <span className="rounded-lg bg-sky-50 p-2.5 text-sky-700">
+                        <FileText className="h-5 w-5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-medium text-gray-900 group-hover:text-sky-800">
+                          {documento.titoloOriginale}
+                        </p>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+                          <span>{entityLabel(documento)}</span>
+                          <span>{documento.categoria}</span>
+                          <span>{formatSize(documento.sizeBytes)}</span>
+                          {documento.dataScadenza && (
+                            <span className="flex items-center gap-1">
+                              <CalendarClock className="h-3.5 w-3.5" />
+                              {new Date(documento.dataScadenza).toLocaleDateString("it-IT")}
+                            </span>
+                          )}
+                          {documento.aiWhitelist && (
+                            <span className="flex items-center gap-1 text-violet-600">
+                              <ShieldCheck className="h-3.5 w-3.5" />
+                              AI
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span
+                        className={cn(
+                          "hidden rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset sm:inline-flex",
+                          statusStyle(documento.statoValidita)
+                        )}
+                      >
+                        {documento.statoValidita.replaceAll("_", " ")}
+                      </span>
+                    </Link>
+                    {isAdmin && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`Elimina ${documento.titoloOriginale}`}
+                        title="Elimina documento"
+                        className="shrink-0 text-gray-400 hover:bg-red-50 hover:text-red-700"
+                        onClick={() =>
+                          setPendingDelete({
+                            ids: [documento.id],
+                            label: `“${documento.titoloOriginale}”`,
+                          })
+                        }
+                      >
+                        <Trash2 />
+                      </Button>
+                    )}
+                    <Link
+                      href={href}
+                      tabIndex={-1}
+                      aria-hidden
+                      className="flex shrink-0 items-center"
+                    >
+                      <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-sky-600" />
+                    </Link>
+                  </div>
                 );
               })}
               {listTotal > documents.length && (
@@ -1429,6 +1603,47 @@ export default function DocumentiWorkspace() {
           onUploaded={refresh}
         />
       )}
+
+      <Dialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setPendingDelete(null);
+        }}
+      >
+        <DialogContent showCloseButton={!deleting}>
+          <DialogHeader>
+            <DialogTitle>
+              {pendingDelete && pendingDelete.ids.length > 1
+                ? "Eliminare i documenti selezionati?"
+                : "Eliminare il documento?"}
+            </DialogTitle>
+            <DialogDescription>
+              {pendingDelete
+                ? pendingDelete.ids.length > 1
+                  ? `${pendingDelete.label} verranno rimossi dall’archivio e dallo storage. L’operazione non è reversibile.`
+                  : `${pendingDelete.label} verrà rimosso dall’archivio e dallo storage. L’operazione non è reversibile.`
+                : null}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={deleting}
+              onClick={() => setPendingDelete(null)}
+            >
+              Annulla
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleting}
+              onClick={confirmDelete}
+            >
+              <Trash2 />
+              {deleting ? "Eliminazione…" : "Elimina"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -5,7 +5,8 @@ import { extractTextWithOcrFallback } from "@/lib/document-ingest";
 import { downloadFromR2, isR2Configured } from "@/lib/r2";
 import { isOpenAiConfigured } from "@/lib/openai";
 import { structureDocumento } from "@/lib/document-structure";
-import { indexDocumentoChunks } from "@/lib/rag";
+import { indexDocumento } from "@/lib/document-indexer";
+import { isEmbeddingStale } from "@/lib/document-embedding-profile";
 import { DOCUMENTI_SOURCE_PATH } from "@/lib/config";
 import { pendingAiWhere } from "@/lib/document-ai-queue";
 
@@ -292,6 +293,7 @@ export async function processDocumentoAi(
       select: {
         aiWhitelist: true,
         extractedText: true,
+        embeddingActiveProfile: true,
         _count: { select: { chunks: true } },
       },
     });
@@ -335,9 +337,14 @@ export async function processDocumentoAi(
         error: "OPENAI_API_KEY mancante per RAG",
         ms: Date.now() - started,
       };
-    } else if (force || current._count.chunks === 0) {
+    } else if (
+      force ||
+      current._count.chunks === 0 ||
+      isEmbeddingStale(current)
+    ) {
       try {
-        chunksIndexed = await indexDocumentoChunks(doc.id);
+        const indexed = await indexDocumento(doc.id);
+        chunksIndexed = indexed.chunkCount;
         rag = "indexed";
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

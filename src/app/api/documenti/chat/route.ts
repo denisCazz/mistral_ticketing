@@ -7,10 +7,13 @@ import {
   generateDocumentAnswer,
   buildAiAuditCost,
 } from "@/lib/openai";
-import { searchDocumentChunks } from "@/lib/document-retrieval";
 import { OPENAI_CHAT_MODEL } from "@/lib/config";
 import { canAccessDocumentiHr } from "@/lib/access";
 import { groupChunksByDocument } from "@/lib/document-answer-sources";
+import {
+  entityContextLine,
+  retrieveForAi,
+} from "@/lib/document-ai-retrieve";
 
 const MIN_SIMILARITY = 0.35;
 const MAX_QUESTION_LENGTH = 2000;
@@ -56,9 +59,9 @@ export async function POST(req: Request) {
     );
   }
 
-  const retrieval = await searchDocumentChunks({
-    embedding: queryEmbedding,
+  const retrieval = await retrieveForAi({
     query: question,
+    embedding: queryEmbedding,
     limit: 16,
     scope: { canAccessHr: canAccessDocumentiHr(session) },
   });
@@ -78,11 +81,17 @@ export async function POST(req: Request) {
     })
     .slice(0, 8);
   const documentSources = groupChunksByDocument(chunks, question);
+  const questionForModel = [
+    entityContextLine(retrieval.entities),
+    question,
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   let answerResult;
   try {
     answerResult = await generateDocumentAnswer({
-      question,
+      question: questionForModel,
       contextChunks: documentSources.map((source) => ({
         content: source.content,
         documentoId: source.documentoId,
@@ -138,6 +147,8 @@ export async function POST(req: Request) {
             totalTokens: answerResult.totalTokens + embeddingTokens,
             estimatedCostUsd,
             retrievalMode: retrieval.mode,
+            usedFilters: retrieval.usedFilters,
+            entities: retrieval.entities,
           },
         },
       },

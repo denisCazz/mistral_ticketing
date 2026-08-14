@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { canManageMagazzino } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { serializeArticolo } from "@/lib/magazzino";
 import { z } from "zod";
@@ -129,6 +130,9 @@ export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!canManageMagazzino(session)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const body = await req.json();

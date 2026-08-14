@@ -1,15 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
-import {
-  isOpenAiConfigured,
-  embedText,
-  generatePreventivoDraft,
-  buildAiAuditCost,
-} from "@/lib/openai";
-import { searchDocumentChunks } from "@/lib/document-retrieval";
-import { OPENAI_CHAT_MODEL } from "@/lib/config";
-import { canAccessDocumentiHr } from "@/lib/access";
+import { isOpenAiConfigured } from "@/lib/openai";
+import { runPreventivoAiGeneration } from "@/lib/preventivo-ai-run";
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -29,108 +21,23 @@ export async function POST(req: Request) {
   }
 
   const clienteId = body.clienteId ? String(body.clienteId) : null;
-  let clienteInfo = "";
-  if (clienteId) {
-    const cliente = await prisma.cliente.findUnique({ where: { id: clienteId } });
-    if (!cliente) {
-      return NextResponse.json({ error: "Cliente non trovato" }, { status: 404 });
-    }
-    clienteInfo = [
-      cliente.ragioneSociale,
-      cliente.indirizzo,
-      cliente.citta,
-      cliente.email,
-      cliente.cellulare,
-    ]
-      .filter(Boolean)
-      .join("\n");
-  }
 
-  let queryEmbedding: number[];
-  let embeddingTokens = 0;
   try {
-    const embedded = await embedText(prompt);
-    queryEmbedding = embedded.embedding;
-    embeddingTokens = embedded.tokens;
-  } catch (err) {
-    console.error("embedText failed:", err);
-    return NextResponse.json(
-      { error: "Errore embedding OpenAI. Riprova tra poco." },
-      { status: 502 }
-    );
-  }
-
-  const retrieval = await searchDocumentChunks({
-    embedding: queryEmbedding,
-    query: prompt,
-    limit: 6,
-    scope: { canAccessHr: canAccessDocumentiHr(session) },
-  });
-  const chunks = retrieval.chunks;
-
-  let draft;
-  try {
-    draft = await generatePreventivoDraft({
+    const result = await runPreventivoAiGeneration({
+      session,
       prompt,
-      clienteInfo: clienteInfo || "Cliente non ancora specificato",
-      contextChunks: chunks.map((c) => ({
-        content: c.content,
-        documentoId: c.documentoId,
-        titolo: c.titolo,
-      })),
+      clienteId,
     });
-  } catch (err) {
-    console.error("generatePreventivoDraft failed:", err);
+    return NextResponse.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message === "Cliente non trovato") {
+      return NextResponse.json({ error: message }, { status: 404 });
+    }
+    console.error("generatePreventivoDraft failed:", error);
     return NextResponse.json(
       { error: "Errore generazione AI. Riprova tra poco." },
       { status: 502 }
     );
   }
-
-  const model = draft.model || OPENAI_CHAT_MODEL;
-  const estimatedCostUsd = buildAiAuditCost({
-    model,
-    promptTokens: draft.promptTokens,
-    completionTokens: draft.completionTokens,
-    embeddingTokens,
-  });
-  const sources = chunks.map((c) => ({
-    documentoId: c.documentoId,
-    titolo: c.titolo,
-    similarity: c.similarity,
-  }));
-
-  // Solo campi base: i token/costi vanno in outputJson per evitare mismatch client Prisma.
-  void prisma.aiGenerationAudit
-    .create({
-      data: {
-        userId: session.user!.id!,
-        prompt,
-        model,
-        sources,
-        outputJson: {
-          ...draft.output,
-          _usage: {
-            promptTokens: draft.promptTokens,
-            completionTokens: draft.completionTokens,
-            embeddingTokens,
-            totalTokens: draft.totalTokens + embeddingTokens,
-            estimatedCostUsd,
-          },
-        },
-      },
-    })
-    .catch((err) => {
-      console.error("AiGenerationAudit create failed (bozza già restituita):", err);
-    });
-
-  return NextResponse.json({
-    bozza: draft.output,
-    fonti: chunks.map((c) => ({
-      documentoId: c.documentoId,
-      titolo: c.titolo,
-      excerpt: c.content.slice(0, 300),
-      similarity: c.similarity,
-    })),
-  });
 }

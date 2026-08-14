@@ -1,5 +1,6 @@
 ﻿import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { canAccessDocumento } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { structureDocumento } from "@/lib/document-structure";
 import {
@@ -135,10 +136,28 @@ export async function GET(_req: Request, { params }: Params) {
       nonServeScadenza: true,
       dipendenteId: true,
       automezzoId: true,
+      entityType: true,
+      categoria: true,
     },
   });
   if (!doc) {
     return NextResponse.json({ error: "Non trovato" }, { status: 404 });
   }
-  return NextResponse.json(doc);
+  if (!canAccessDocumento(session, doc)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  return NextResponse.json({
+    id: doc.id,
+    titoloOriginale: doc.titoloOriginale,
+    extractionJson: doc.extractionJson,
+    extractionAt: doc.extractionAt,
+    dataScadenza: doc.dataScadenza,
+    scadenzaConfidence: doc.scadenzaConfidence,
+    scadenzaSource: doc.scadenzaSource,
+    scadenzaRaw: doc.scadenzaRaw,
+    statoValidita: doc.statoValidita,
+    nonServeScadenza: doc.nonServeScadenza,
+    dipendenteId: doc.dipendenteId,
+    automezzoId: doc.automezzoId,
+  });
 }

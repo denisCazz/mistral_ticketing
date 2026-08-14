@@ -1,12 +1,13 @@
 ﻿import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { canAccessDocumentiHr, documentiHrWhere } from "@/lib/access";
+import { canAccessDocumento, canAccessDocumentiHr, documentiHrWhere } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { isAiWhitelistCandidate } from "@/lib/document-whitelist";
+import { deleteDocumentoRecords, MAX_DOCUMENTI_DELETE } from "@/lib/document-delete";
 import { headR2Object, isR2Configured } from "@/lib/r2";
 import type { EntityType, StatoValidita } from "@prisma/client";
-import { parseScadenzaFromText } from "@/lib/scadenza-parser";
 import { DOCUMENT_EMBEDDING_PROFILE } from "@/lib/document-embedding-profile";
+import { proposeScadenzaForDocument } from "@/lib/scadenza-suggest";
 
 function categoriaSearchTerm(categoria: string): string {
   const aliases: Record<string, string> = {
@@ -92,7 +93,10 @@ export async function GET(req: Request) {
       where,
       skip,
       take: limit,
-      orderBy: [{ categoria: "asc" }, { titoloOriginale: "asc" }],
+      orderBy:
+        scadenza === "presenti"
+          ? [{ dataScadenza: "asc" }, { titoloOriginale: "asc" }]
+          : [{ categoria: "asc" }, { titoloOriginale: "asc" }],
       include: {
         dipendente: { select: { id: true, nome: true, cognome: true } },
         automezzo: { select: { id: true, targa: true } },
@@ -101,22 +105,30 @@ export async function GET(req: Request) {
     prisma.documento.count({ where }),
   ]);
 
-  const payload = suggest
-    ? documenti.map((doc) => {
-        const folderHint = [doc.categoria, doc.sottocategoria]
-          .filter(Boolean)
-          .join("/");
-        const parsed = parseScadenzaFromText(doc.titoloOriginale, folderHint);
-        return {
-          ...doc,
-          suggestedScadenza: parsed.dataScadenza
-            ? parsed.dataScadenza.toISOString().slice(0, 10)
-            : null,
-          suggestedConfidence: parsed.confidence,
-          suggestedRaw: parsed.rawValue,
-        };
-      })
-    : documenti;
+  const payload = documenti.map((doc) => {
+    const { extractedText, extractionJson, ...safe } = doc;
+    if (!suggest) return safe;
+    const suggestion = proposeScadenzaForDocument({
+      titolo: doc.titoloOriginale,
+      categoria: doc.categoria,
+      sottocategoria: doc.sottocategoria,
+      extractionJson,
+      extractedText,
+      extractionAt: doc.extractionAt,
+    });
+    return { ...safe, ...suggestion };
+  });
+  if (suggest && scadenza === "da-classificare") {
+    payload.sort((a, b) => {
+      const score = (d: (typeof payload)[number]) => {
+        if ("suggestedScadenza" in d && d.suggestedScadenza) return 3;
+        if ("suggestedNonServe" in d && d.suggestedNonServe) return 2;
+        if ("canEnqueueAi" in d && d.canEnqueueAi) return 1;
+        return 0;
+      };
+      return score(b) - score(a);
+    });
+  }
 
   return NextResponse.json({
     documenti: payload,
@@ -266,4 +278,51 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json({ documento }, { status: 201 });
+}
+
+export async function DELETE(req: Request) {
+  const session = await auth();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const body = await req.json().catch(() => null);
+  const rawIds = Array.isArray(body?.ids) ? body.ids : [];
+  const ids = [
+    ...new Set(
+      rawIds.filter((id: unknown): id is string => typeof id === "string" && id.trim() !== "")
+    ),
+  ];
+
+  if (ids.length === 0) {
+    return NextResponse.json({ error: "Nessun documento selezionato" }, { status: 400 });
+  }
+  if (ids.length > MAX_DOCUMENTI_DELETE) {
+    return NextResponse.json(
+      { error: `Puoi eliminare al massimo ${MAX_DOCUMENTI_DELETE} documenti alla volta` },
+      { status: 400 }
+    );
+  }
+
+  const documenti = await prisma.documento.findMany({
+    where: { id: { in: ids } },
+    select: {
+      id: true,
+      storageKey: true,
+      entityType: true,
+      categoria: true,
+    },
+  });
+
+  const allowed = documenti.filter((doc) => canAccessDocumento(session, doc));
+  const deleted = await deleteDocumentoRecords(allowed);
+
+  return NextResponse.json({
+    ok: true,
+    deleted,
+    requested: ids.length,
+  });
 }

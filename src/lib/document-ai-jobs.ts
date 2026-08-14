@@ -218,12 +218,29 @@ async function completeJob(job: DocumentoAiJob, tokenCount: number) {
   });
 }
 
+export function embeddingOnlyNeedsPipeline(
+  extractedText: string | null | undefined
+): boolean {
+  return !extractedText?.trim();
+}
+
 export async function runClaimedDocumentAiJob(
   job: DocumentoAiJob
 ): Promise<void> {
   try {
     let tokenCount = 0;
-    if (job.type === "EMBEDDING_ONLY") {
+    const document =
+      job.type === "EMBEDDING_ONLY"
+        ? await prisma.documento.findUnique({
+            where: { id: job.documentoId },
+            select: { extractedText: true },
+          })
+        : null;
+    const needsPipeline =
+      job.type !== "EMBEDDING_ONLY" ||
+      embeddingOnlyNeedsPipeline(document?.extractedText);
+
+    if (job.type === "EMBEDDING_ONLY" && !needsPipeline) {
       const { indexDocumento } = await import("@/lib/document-indexer");
       const result = await indexDocumento(job.documentoId);
       tokenCount = result.tokenCount;
@@ -243,6 +260,7 @@ export async function runClaimedDocumentAiJob(
     await completeJob(job, tokenCount);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    console.error(`${job.type} ${job.documentoId}: ${message}`);
     const state = nextJobStateAfterFailure({
       attempts: job.attempts,
       maxAttempts: job.maxAttempts,

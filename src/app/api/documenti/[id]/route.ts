@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { canAccessDocumento } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { getPresignedDownloadUrl } from "@/lib/r2";
+import { deleteDocumentoRecords } from "@/lib/document-delete";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -145,4 +146,35 @@ export async function PUT(req: Request, { params }: Params) {
   }
 
   return NextResponse.json(documento);
+}
+
+export async function DELETE(_req: Request, { params }: Params) {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { id } = await params;
+  const documento = await prisma.documento.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      storageKey: true,
+      entityType: true,
+      categoria: true,
+    },
+  });
+
+  if (!documento) {
+    return NextResponse.json({ error: "Non trovato" }, { status: 404 });
+  }
+
+  if (!canAccessDocumento(session, documento)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  await deleteDocumentoRecords([documento]);
+
+  return NextResponse.json({ ok: true });
 }

@@ -12,13 +12,15 @@ export default auth((req: NextRequest & { auth: { user?: AuthUser } | null }) =>
   if (
     pathname.startsWith("/login") ||
     pathname.startsWith("/api/auth") ||
-    pathname.startsWith("/api/cron")
+    pathname.startsWith("/api/cron") ||
+    pathname === "/manifest.webmanifest"
   ) {
     return NextResponse.next();
   }
 
-  // Redirect to login if not authenticated
-  if (!req.auth) {
+  // Redirect to login if not authenticated.
+  // Auth.js can return a truthy session without `user` (stale/partial JWT).
+  if (!req.auth?.user) {
     const loginUrl = new URL("/login", req.url);
     if (pathname !== "/") {
       loginUrl.searchParams.set("callbackUrl", pathname);
@@ -77,5 +79,7 @@ export default auth((req: NextRequest & { auth: { user?: AuthUser } | null }) =>
 });
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp)$).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp)$).*)",
+  ],
 };

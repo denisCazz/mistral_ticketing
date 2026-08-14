@@ -3,12 +3,13 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { passwordSchema } from "@/lib/password-policy";
 
 const schema = z
   .object({
     currentPassword: z.string().min(1),
-    newPassword: z.string().min(12),
-    confirmPassword: z.string().min(12),
+    newPassword: passwordSchema,
+    confirmPassword: passwordSchema,
   })
   .refine((data) => data.newPassword === data.confirmPassword, {
     message: "Le password non coincidono",

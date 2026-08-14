@@ -1,4 +1,5 @@
-﻿import { Pool } from "pg";
+﻿import "dotenv/config";
+import { Pool } from "pg";
 import { readFile } from "node:fs/promises";
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -15,6 +16,11 @@ function splitSqlStatements(sql) {
   for (let i = 0; i < sql.length; i++) {
     const ch = sql[i];
     const next = sql[i + 1];
+    // Drop `--` line comments so they cannot swallow the next statement.
+    if (!inDollar && ch === "-" && next === "-") {
+      while (i < sql.length && sql[i] !== "\n") i++;
+      continue;
+    }
     if (!inDollar && ch === "$" && next === "$") {
       inDollar = true;
       current += "$$";
@@ -29,16 +35,14 @@ function splitSqlStatements(sql) {
     }
     if (!inDollar && ch === ";") {
       const trimmed = current.trim();
-      if (trimmed && !trimmed.startsWith("--")) {
-        statements.push(trimmed);
-      }
+      if (trimmed) statements.push(trimmed);
       current = "";
       continue;
     }
     current += ch;
   }
   const tail = current.trim();
-  if (tail && !tail.startsWith("--")) statements.push(tail);
+  if (tail) statements.push(tail);
   return statements;
 }
 

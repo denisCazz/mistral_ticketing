@@ -23,6 +23,7 @@ jobs:
       - run: npm run build
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/ci?schema=public
+          AUTH_SECRET: ci-secret-at-least-32-characters-long
           NEXTAUTH_SECRET: ci-secret-at-least-32-characters-long
           NEXTAUTH_URL: http://localhost:3000
           RAPPORTINI_ENABLED: "false"

@@ -3,11 +3,12 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { passwordSchema } from "@/lib/password-policy";
 
 const createSchema = z.object({
   name: z.string().min(1),
   email: z.string().email(),
-  password: z.string().min(6),
+  password: passwordSchema,
   role: z.enum(["ADMIN", "OPERATORE"]),
 });
 
@@ -21,7 +22,7 @@ export async function GET(req: Request) {
   if (assegnabili) {
     const users = await prisma.user.findMany({
       where: { active: true, role: { in: ["ADMIN", "OPERATORE"] } },
-      select: { id: true, name: true, email: true, role: true },
+      select: { id: true, name: true },
       orderBy: { name: "asc" },
     });
     return NextResponse.json(users);

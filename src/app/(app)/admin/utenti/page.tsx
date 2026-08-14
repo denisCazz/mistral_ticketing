@@ -170,7 +170,8 @@ export default function UtentiPage() {
               </div>
               <div className="space-y-1">
                 <Label>Password</Label>
-                <Input type="password" required minLength={6} value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} />
+                <Input type="password" required minLength={12} value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} />
+                <p className="text-xs text-gray-400">Minimo 12 caratteri. L&apos;utente dovrà cambiarla al primo accesso.</p>
               </div>
               <div className="space-y-1">
                 <Label>Ruolo</Label>
@@ -215,7 +216,7 @@ export default function UtentiPage() {
                 </div>
                 <div className="space-y-1">
                   <Label>Nuova password (opzionale)</Label>
-                  <Input type="password" minLength={6} value={editForm.password} onChange={(e) => setEditForm((f) => ({ ...f, password: e.target.value }))} />
+                  <Input type="password" minLength={12} value={editForm.password} onChange={(e) => setEditForm((f) => ({ ...f, password: e.target.value }))} />
                 </div>
                 <div className="space-y-1">
                   <Label>Ruolo</Label>

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { canRettificaMagazzino } from "@/lib/access";
 import { prisma } from "@/lib/db";
 import { serializeArticolo, toNum } from "@/lib/magazzino";
 import { z } from "zod";
@@ -24,6 +25,9 @@ export async function POST(req: Request) {
   }
 
   const { articoloId, tipo, quantita, note } = parsed.data;
+  if (tipo === "RETTIFICA" && !canRettificaMagazzino(session)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   try {
     const result = await prisma.$transaction(async (tx) => {

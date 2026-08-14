@@ -176,6 +176,17 @@ export default function ProcessingPanel() {
           Il processo server non vede `OPENAI_API_KEY`.
         </div>
       )}
+      {snapshot &&
+        snapshot.jobs.PENDING > 0 &&
+        snapshot.jobs.RUNNING === 0 && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Ci sono {snapshot.jobs.PENDING} job in coda ma nessuno in
+            esecuzione. Avvia il worker in un altro terminale:{" "}
+            <code className="rounded bg-amber-100 px-1">
+              npm run documenti:worker
+            </code>
+          </div>
+        )}
       {snapshot && !snapshot.r2Configured && (
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
           R2 non è disponibile: i file devono essere leggibili da

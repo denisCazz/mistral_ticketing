@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import {
   ArrowDownToLine,
@@ -35,6 +36,8 @@ type Phase =
 
 export default function MagazzinoScansionePage() {
   const router = useRouter();
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === "ADMIN";
   const panelRef = useRef<HTMLDivElement>(null);
   const [phase, setPhase] = useState<Phase>({ kind: "scanning" });
   const [qty, setQty] = useState("1");
@@ -181,7 +184,8 @@ export default function MagazzinoScansionePage() {
         <div>
           <h1 className="text-xl font-bold text-gray-900">Scansione</h1>
           <p className="text-sm text-gray-500">
-            QR / EAN · se non riconosciuto puoi creare l&apos;articolo
+            QR / EAN · entrata e uscita sul campo
+            {isAdmin ? " · se non riconosciuto puoi creare l'articolo" : ""}
           </p>
         </div>
       </div>
@@ -286,14 +290,20 @@ export default function MagazzinoScansionePage() {
           <div className="flex items-start gap-2">
             <PackagePlus className="h-5 w-5 text-amber-700 mt-0.5 shrink-0" />
             <div>
-              <h2 className="font-semibold text-gray-900">Nuovo articolo</h2>
+              <h2 className="font-semibold text-gray-900">
+                {isAdmin ? "Nuovo articolo" : "Articolo non in magazzino"}
+              </h2>
               <p className="text-sm text-gray-600 mt-0.5">
                 Codice <span className="font-mono font-medium">{phase.code}</span> non
-                riconosciuto. Inserisci almeno il nome e salva.
+                riconosciuto.
+                {isAdmin
+                  ? " Inserisci almeno il nome e salva."
+                  : " Chiedi a un amministratore di crearlo."}
               </p>
             </div>
           </div>
 
+          {isAdmin ? (
           <form onSubmit={createFromScan} className="space-y-3">
             <div className="space-y-1.5">
               <Label htmlFor="new-nome">Nome articolo *</Label>
@@ -369,6 +379,11 @@ export default function MagazzinoScansionePage() {
               </Button>
             </div>
           </form>
+          ) : (
+            <Button type="button" variant="outline" onClick={resumeScan}>
+              Riprendi scansione
+            </Button>
+          )}
         </div>
       )}
     </div>

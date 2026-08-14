@@ -3,10 +3,11 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { passwordSchema } from "@/lib/password-policy";
 
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
-  password: z.string().min(6).optional(),
+  password: passwordSchema.optional(),
   role: z.enum(["ADMIN", "OPERATORE"]).optional(),
   active: z.boolean().optional(),
 });

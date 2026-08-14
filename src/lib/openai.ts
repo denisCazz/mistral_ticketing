@@ -86,6 +86,7 @@ export interface PreventivoAiResult {
 export async function generatePreventivoDraft(params: {
   prompt: string;
   clienteInfo: string;
+  groundingText?: string;
   contextChunks: Array<{ content: string; documentoId: string; titolo: string }>;
 }): Promise<PreventivoAiResult> {
   const client = getOpenAi();
@@ -110,10 +111,11 @@ Regole:
 - introduzione: testo professionale in italiano (almeno 2-3 frasi) che presenta il preventivo in base alla richiesta.
 - condizioni: condizioni di fornitura tipiche (validità, tempi, esclusione IVA se rilevante, note operative).
 - righe: almeno 1 voce coerente con la richiesta; se non conosci il prezzo metti prezzoUnitario 0 e in descrizione indica "(prezzo da confermare)".
-- Preferisci prezzi/voci dalle fonti quando disponibili; non inventare listini precisi.
+- Usa i prezzi del listino interno / preventivi precedenti se coerenti con la richiesta. Non inventare listini.
+- Se il grounding indica una targa, un dipendente o un cliente, resta su quella entità.
 - aliquotaIva di default 22, scontoPercentuale di default 0.`;
 
-  const user = `Cliente:\n${params.clienteInfo}\n\nRichiesta:\n${params.prompt}\n\nFonti documentali (opzionali):\n${sourcesText || "Nessuna fonte disponibile: genera comunque una bozza realistica dalla richiesta, con prezzi a 0 da confermare."}`;
+  const user = `Cliente:\n${params.clienteInfo}\n\nRichiesta:\n${params.prompt}\n\nDati interni (tariffe/storico, obbligatori se presenti):\n${params.groundingText?.trim() || "Nessun listino interno disponibile."}\n\nFonti documentali (opzionali):\n${sourcesText || "Nessuna fonte disponibile: genera comunque una bozza realistica dalla richiesta, con prezzi a 0 da confermare."}`;
 
   const res = await client.chat.completions.create({
     model: OPENAI_CHAT_MODEL,

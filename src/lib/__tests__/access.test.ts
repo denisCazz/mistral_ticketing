@@ -3,6 +3,10 @@ import type { Session } from "next-auth";
 import {
   canAccessDocumento,
   canAccessDocumentiHr,
+  canAccessScadenza,
+  canAssignScadenzaResponsabile,
+  canManageMagazzino,
+  canRettificaMagazzino,
   documentiHrWhere,
 } from "@/lib/access";
 
@@ -50,5 +54,27 @@ describe("documenti access policy", () => {
         notIn: ["UNILAV", "DOC", "IDONEITA", "F24", "DURC", "DURF"],
       },
     });
+  });
+});
+
+describe("magazzino e scadenze access policy", () => {
+  it("solo ADMIN gestisce catalogo e rettifica", () => {
+    expect(canManageMagazzino(session("ADMIN"))).toBe(true);
+    expect(canRettificaMagazzino(session("ADMIN"))).toBe(true);
+    expect(canManageMagazzino(session("OPERATORE"))).toBe(false);
+    expect(canRettificaMagazzino(session("OPERATORE"))).toBe(false);
+    expect(canManageMagazzino(null)).toBe(false);
+  });
+
+  it("OPERATORE accede solo alle scadenze di cui è responsabile", () => {
+    const op = session("OPERATORE");
+    expect(canAccessScadenza(op, { responsabileId: "u1" })).toBe(true);
+    expect(canAccessScadenza(op, { responsabileId: "other" })).toBe(false);
+    expect(canAccessScadenza(op, { responsabileId: null })).toBe(false);
+    expect(canAccessScadenza(session("ADMIN"), { responsabileId: "other" })).toBe(
+      true
+    );
+    expect(canAssignScadenzaResponsabile(op)).toBe(false);
+    expect(canAssignScadenzaResponsabile(session("ADMIN"))).toBe(true);
   });
 });

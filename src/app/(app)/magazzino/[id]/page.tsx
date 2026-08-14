@@ -308,21 +308,25 @@ export default function ArticoloDetailPage() {
           <ArrowUpFromLine className="h-4 w-4 mr-2" />
           Uscita
         </Button>
-        <Button
-          variant="outline"
-          onClick={() => {
-            setMoveOpen("RETTIFICA");
-            setQty(String(articolo.quantita));
-            setNote("");
-          }}
-        >
-          <SlidersHorizontal className="h-4 w-4 mr-2" />
-          Rettifica
-        </Button>
-        <Button variant="outline" onClick={() => setEditOpen(true)}>
-          <Pencil className="h-4 w-4 mr-2" />
-          Modifica
-        </Button>
+        {isAdmin && (
+          <Button
+            variant="outline"
+            onClick={() => {
+              setMoveOpen("RETTIFICA");
+              setQty(String(articolo.quantita));
+              setNote("");
+            }}
+          >
+            <SlidersHorizontal className="h-4 w-4 mr-2" />
+            Rettifica
+          </Button>
+        )}
+        {isAdmin && (
+          <Button variant="outline" onClick={() => setEditOpen(true)}>
+            <Pencil className="h-4 w-4 mr-2" />
+            Modifica
+          </Button>
+        )}
         <Link
           href="/magazzino/scansione"
           className={cn(buttonVariants({ variant: "outline" }))}

@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import {
@@ -11,10 +11,19 @@ import {
   Download,
   ExternalLink,
   ShieldCheck,
+  Trash2,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { DocumentPreview } from "@/components/document-preview";
 import { cn } from "@/lib/utils";
 import { invalidateDocumentiCache } from "@/lib/documenti-cache";
@@ -68,6 +77,7 @@ function MetaRow({ label, value }: { label: string; value: ReactNode }) {
 function DocumentoDetailContent() {
   const { id } = useParams<{ id: string }>();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const { data: session } = useSession();
   const isAdmin = session?.user?.role === "ADMIN";
 
@@ -76,6 +86,8 @@ function DocumentoDetailContent() {
   const [dataScadenza, setDataScadenza] = useState("");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const backHref = useMemo(() => {
     const ret = searchParams.get("return");
@@ -143,6 +155,23 @@ function DocumentoDetailContent() {
     );
     invalidateDocumentiCache();
     toast.success("Scadenza salvata");
+  }
+
+  async function confirmDelete() {
+    if (!doc) return;
+    setDeleting(true);
+    const res = await fetch(`/api/documenti/${id}`, { method: "DELETE" });
+    setDeleting(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      toast.error(
+        typeof data.error === "string" ? data.error : "Eliminazione non riuscita"
+      );
+      return;
+    }
+    invalidateDocumentiCache();
+    toast.success("Documento eliminato");
+    router.push(backHref);
   }
 
   if (loading) {
@@ -233,6 +262,12 @@ function DocumentoDetailContent() {
             <Download className="mr-2 h-4 w-4" />
             Scarica
           </a>
+          {isAdmin && (
+            <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
+              <Trash2 className="mr-2 h-4 w-4" />
+              Elimina
+            </Button>
+          )}
         </div>
       </div>
 
@@ -330,6 +365,40 @@ function DocumentoDetailContent() {
           )}
         </aside>
       </div>
+
+      <Dialog
+        open={deleteOpen}
+        onOpenChange={(open) => {
+          if (!deleting) setDeleteOpen(open);
+        }}
+      >
+        <DialogContent showCloseButton={!deleting}>
+          <DialogHeader>
+            <DialogTitle>Eliminare il documento?</DialogTitle>
+            <DialogDescription>
+              “{doc.titoloOriginale}” verrà rimosso dall’archivio e dallo storage.
+              L’operazione non è reversibile.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={deleting}
+              onClick={() => setDeleteOpen(false)}
+            >
+              Annulla
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleting}
+              onClick={confirmDelete}
+            >
+              <Trash2 />
+              {deleting ? "Eliminazione…" : "Elimina"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

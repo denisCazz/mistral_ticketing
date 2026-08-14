@@ -19,6 +19,12 @@ export type DocumentSearchScope = {
   canAccessHr: boolean;
 };
 
+export type DocumentSearchFilters = {
+  dipendenteId?: string;
+  automezzoId?: string;
+  categorie?: string[];
+};
+
 export type DocumentSearchChunk = {
   id: string;
   documentoId: string;
@@ -32,6 +38,57 @@ export type DocumentSearchResponse = {
   chunks: DocumentSearchChunk[];
   mode: "pgvector" | "json";
 };
+
+export function prismaDocumentSearchFilters(
+  filters?: DocumentSearchFilters
+): Prisma.DocumentoWhereInput {
+  if (!filters) return {};
+  const entity =
+    filters.dipendenteId && filters.automezzoId
+      ? {
+          OR: [
+            { dipendenteId: filters.dipendenteId },
+            { automezzoId: filters.automezzoId },
+          ],
+        }
+      : filters.dipendenteId
+        ? { dipendenteId: filters.dipendenteId }
+        : filters.automezzoId
+          ? { automezzoId: filters.automezzoId }
+          : {};
+  return {
+    ...entity,
+    ...(filters.categorie?.length
+      ? { categoria: { in: filters.categorie } }
+      : {}),
+  };
+}
+
+export function sqlDocumentSearchFilters(
+  filters?: DocumentSearchFilters
+): Prisma.Sql {
+  const parts: Prisma.Sql[] = [];
+  if (filters?.dipendenteId && filters.automezzoId) {
+    parts.push(
+      Prisma.sql`(document."dipendenteId" = ${filters.dipendenteId} OR document."automezzoId" = ${filters.automezzoId})`
+    );
+  } else if (filters?.dipendenteId) {
+    parts.push(
+      Prisma.sql`document."dipendenteId" = ${filters.dipendenteId}`
+    );
+  } else if (filters?.automezzoId) {
+    parts.push(
+      Prisma.sql`document."automezzoId" = ${filters.automezzoId}`
+    );
+  }
+  if (filters?.categorie?.length) {
+    parts.push(
+      Prisma.sql`document.categoria IN (${Prisma.join(filters.categorie)})`
+    );
+  }
+  if (parts.length === 0) return Prisma.empty;
+  return Prisma.sql`AND ${Prisma.join(parts, " AND ")}`;
+}
 
 type AuthorizedCandidate = {
   entityType: string;
@@ -134,6 +191,7 @@ async function searchNative(params: {
   query: string;
   limit: number;
   scope: DocumentSearchScope;
+  filters?: DocumentSearchFilters;
 }): Promise<DocumentSearchChunk[]> {
   const vector = vectorLiteral(params.embedding);
   const candidateLimit = Math.max(64, params.limit * 8);
@@ -145,6 +203,7 @@ async function searchNative(params: {
           ${Prisma.join([...DOCUMENTI_HR_CATEGORIE])}
         )
       `;
+  const entityFilter = sqlDocumentSearchFilters(params.filters);
 
   const rows = await prisma.$queryRaw<NativeRow[]>(Prisma.sql`
     WITH eligible AS (
@@ -162,6 +221,7 @@ async function searchNative(params: {
         AND chunk."embeddingVersion" = document."embeddingActiveVersion"
         AND chunk."embeddingVector" IS NOT NULL
         ${hrFilter}
+        ${entityFilter}
     ),
     vector_ranked AS (
       SELECT
@@ -242,6 +302,7 @@ async function searchJson(params: {
   query: string;
   limit: number;
   scope: DocumentSearchScope;
+  filters?: DocumentSearchFilters;
 }): Promise<DocumentSearchChunk[]> {
   const candidates: FallbackCandidate[] = [];
   let cursor: string | undefined;
@@ -256,6 +317,7 @@ async function searchJson(params: {
             aiWhitelist: true,
             statoIngestione: "READY",
             ...documentiHrWhere(params.scope.canAccessHr),
+            ...prismaDocumentSearchFilters(params.filters),
           },
         },
       },
@@ -346,6 +408,7 @@ export async function searchDocumentChunks(params: {
   query: string;
   limit: number;
   scope: DocumentSearchScope;
+  filters?: DocumentSearchFilters;
 }): Promise<DocumentSearchResponse> {
   const limit = Math.min(50, Math.max(1, params.limit));
   const normalized = { ...params, limit };

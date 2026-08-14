@@ -14,6 +14,7 @@ const {
   PutObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  DeleteObjectCommand,
 } = AwsS3;
 
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID ?? "";
@@ -112,6 +113,12 @@ export async function headR2Object(key: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export async function deleteFromR2(key: string): Promise<void> {
+  if (!isR2Configured()) return;
+  const s3 = getClient();
+  await s3.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key }));
 }
 
 export async function downloadFromR2(key: string): Promise<Buffer> {
