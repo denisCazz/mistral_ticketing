@@ -291,11 +291,11 @@ export async function DELETE(req: Request) {
 
   const body = await req.json().catch(() => null);
   const rawIds = Array.isArray(body?.ids) ? body.ids : [];
-  const ids = [
-    ...new Set(
-      rawIds.filter((id: unknown): id is string => typeof id === "string" && id.trim() !== "")
-    ),
-  ];
+  const uniqueIds = new Set<string>();
+  for (const id of rawIds) {
+    if (typeof id === "string" && id.trim() !== "") uniqueIds.add(id);
+  }
+  const ids = Array.from(uniqueIds);
 
   if (ids.length === 0) {
     return NextResponse.json({ error: "Nessun documento selezionato" }, { status: 400 });

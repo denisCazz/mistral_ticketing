@@ -21,7 +21,7 @@ export async function POST(req: Request) {
   for (const id of rawIds) {
     if (typeof id === "string" && id.trim() !== "") unique.add(id.trim());
   }
-  const ids = [...unique].slice(0, MAX_IDS);
+  const ids = Array.from(unique).slice(0, MAX_IDS);
 
   if (ids.length === 0) {
     return NextResponse.json(
